@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skipper - 课堂实录 10分钟测试样例回放</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090d16;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      height: 48px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 13px;
+    }
+    .badge {
+      background: #1e3a8a;
+      color: #93c5fd;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .main-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      position: relative;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      max-height: calc(100vh - 48px);
+      object-fit: contain;
+      background: #000;
+    }
+    .time-badge {
+      position: absolute;
+      bottom: 60px;
+      right: 20px;
+      background: rgba(0,0,0,0.75);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 14px;
+      color: #38bdf8;
+      border: 1px solid rgba(255,255,255,0.1);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 16px;">🎬</span>
+      <span style="font-weight: 600;">课堂实录测试样例 (10分钟截取版)</span>
+      <span class="badge">本地离线测试源</span>
+    </div>
+    <div style="font-size: 12px; color: #94a3b8;">
+      视频已就绪 · 点击播放或完成初始化以开始监听
+    </div>
+  </header>
+
+  <div class="main-container">
+    <video id="video-player" src="./sample_10min.mp4" controls autoplay></video>
+    <div class="time-badge" id="time-display">00:00 / 10:00</div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video-player');
+    const timeDisplay = document.getElementById('time-display');
+
+    function formatTime(seconds) {
+      if (isNaN(seconds)) return '00:00';
+      const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+      const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    video.addEventListener('timeupdate', () => {
+      timeDisplay.innerText = `${formatTime(video.currentTime)} / ${formatTime(video.duration || 600)}`;
+    });
+  </script>
+</body>
+</html>

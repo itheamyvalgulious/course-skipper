@@ -1,0 +1,33 @@
+{
+  "name": "skipper",
+  "version": "1.0.0",
+  "description": "Skipper - Classroom live stream assistant with Electron, audio/video capture and AI notification",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "postinstall": "node scripts/ensure-electron.js",
+    "watch": "tsc -w",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "test": "npm run build && electron dist/tests/integration.test.js"
+  },
+  "keywords": [
+    "electron",
+    "live-stream",
+    "assistant",
+    "audio-capture",
+    "screen-capture"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^22.5.4",
+    "@types/ws": "^8.18.1",
+    "electron": "^31.3.1",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "@google/genai": "^2.23.0",
+    "ws": "^8.21.3"
+  }
+}

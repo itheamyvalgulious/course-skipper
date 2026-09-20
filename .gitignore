@@ -10,6 +10,21 @@ dist-electron/
 # Application runtime & local data
 .skipper-data/
 
+# Large media & video files (never commit to git)
+test-assets/*.mp4
+test-assets/*.mkv
+test-assets/*.avi
+test-assets/*.mov
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.flv
+
+# Benchmark & test outputs
+benchmark-results/
+test-results/
+
 # Scratch & temporary experiment files
 scratch_*
 *.tmp
