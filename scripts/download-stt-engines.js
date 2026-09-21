@@ -35,6 +35,7 @@ const SKIP_LARGE = args.includes('--skip-large');
 const FUNASR_ONLY = args.includes('--funasr-only');
 const VAD_ONLY = args.includes('--vad-only');
 const SKIP_FUNASR = args.includes('--skip-funasr');
+const BIN_ONLY = args.includes('--bin-only');
 
 // Ensure base directories exist
 for (const dir of [
@@ -243,10 +244,146 @@ async function downloadSileroVadModel() {
   return sileroVadPath;
 }
 
+async function downloadWhisperBinary() {
+  const whisperCliExe = path.join(WHISPER_BIN_DIR, `whisper-cli${exeExt}`);
+  if (fs.existsSync(whisperCliExe)) {
+    console.log(`[SKIP] Whisper binary already installed: ${whisperCliExe}`);
+    return whisperCliExe;
+  }
+  console.log(`Downloading Whisper.cpp ${isWin ? 'Windows x64' : 'Linux x64'} binary...`);
+  const whisperArchiveName = isWin ? 'whisper-bin-x64.zip' : 'whisper-bin-ubuntu-x64.tar.gz';
+  const whisperZipUrl = `https://github.com/ggml-org/whisper.cpp/releases/download/b5130/${whisperArchiveName}`;
+  const whisperZipPath = path.join(CACHE_DIR, whisperArchiveName);
+  await downloadFile(whisperZipUrl, whisperZipPath, 5 * 1024 * 1024);
+
+  const tempExtractDir = path.join(CACHE_DIR, 'whisper-extract-temp');
+  if (fs.existsSync(tempExtractDir)) {
+    fs.rmSync(tempExtractDir, { recursive: true, force: true });
+  }
+  extractArchive(whisperZipPath, tempExtractDir);
+
+  const targetCliName = `whisper-cli${exeExt}`;
+  const foundExe = findFileRecursive(tempExtractDir, targetCliName);
+  if (!foundExe) {
+    throw new Error(`${targetCliName} not found in extracted whisper.cpp archive!`);
+  }
+  const exeDir = path.dirname(foundExe);
+  const files = fs.readdirSync(exeDir);
+  for (const f of files) {
+    const srcFile = path.join(exeDir, f);
+    const destFile = path.join(WHISPER_BIN_DIR, f);
+    if (fs.statSync(srcFile).isFile()) {
+      fs.copyFileSync(srcFile, destFile);
+      if (!isWin) {
+        try { fs.chmodSync(destFile, 0o755); } catch {}
+      }
+    }
+  }
+  fs.rmSync(tempExtractDir, { recursive: true, force: true });
+  console.log(`[SUCCESS] Whisper.cpp installed to: ${WHISPER_BIN_DIR}\n`);
+  return whisperCliExe;
+}
+
+async function downloadSherpaBinary() {
+  const sherpaDiarizationExe = path.join(SHERPA_BIN_DIR, `sherpa-onnx-offline-speaker-diarization${exeExt}`);
+  if (fs.existsSync(sherpaDiarizationExe)) {
+    console.log(`[SKIP] Sherpa diarization binary already installed: ${sherpaDiarizationExe}`);
+    return sherpaDiarizationExe;
+  }
+  console.log(`Downloading Sherpa-onnx static Release binary archive (${isWin ? 'Windows x64' : 'Linux x64'})...`);
+  const sherpaTarName = isWin
+    ? 'sherpa-onnx-v1.13.8-win-x64-static-MT-Release.tar.bz2'
+    : 'sherpa-onnx-v1.13.8-linux-x64-static.tar.bz2';
+  const sherpaTarUrl = `https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/${sherpaTarName}`;
+  const sherpaTarPath = path.join(CACHE_DIR, sherpaTarName);
+  await downloadFile(sherpaTarUrl, sherpaTarPath, 150 * 1024 * 1024);
+
+  const tempSherpaExtractDir = path.join(CACHE_DIR, 'sherpa-extract-temp');
+  if (fs.existsSync(tempSherpaExtractDir)) {
+    fs.rmSync(tempSherpaExtractDir, { recursive: true, force: true });
+  }
+  extractArchive(sherpaTarPath, tempSherpaExtractDir);
+
+  const targetDiarizeName = `sherpa-onnx-offline-speaker-diarization${exeExt}`;
+  const foundDiarize = findFileRecursive(tempSherpaExtractDir, targetDiarizeName);
+  if (!foundDiarize) {
+    throw new Error(`${targetDiarizeName} not found in extracted sherpa-onnx archive!`);
+  }
+  const sherpaExeDir = path.dirname(foundDiarize);
+  const sherpaFiles = fs.readdirSync(sherpaExeDir);
+  for (const f of sherpaFiles) {
+    const srcFile = path.join(sherpaExeDir, f);
+    const destFile = path.join(SHERPA_BIN_DIR, f);
+    if (fs.statSync(srcFile).isFile()) {
+      fs.copyFileSync(srcFile, destFile);
+      if (!isWin) {
+        try { fs.chmodSync(destFile, 0o755); } catch {}
+      }
+    }
+  }
+  fs.rmSync(tempSherpaExtractDir, { recursive: true, force: true });
+  console.log(`[SUCCESS] Sherpa-onnx installed to: ${SHERPA_BIN_DIR}\n`);
+  return sherpaDiarizationExe;
+}
+
+function verifyBinaries() {
+  console.log('====================================================');
+  console.log('  Verifying Executables');
+  console.log('====================================================\n');
+  const whisperCliExe = path.join(WHISPER_BIN_DIR, `whisper-cli${exeExt}`);
+  const sherpaDiarizationExe = path.join(SHERPA_BIN_DIR, `sherpa-onnx-offline-speaker-diarization${exeExt}`);
+  const sherpaOfflineExe = path.join(SHERPA_BIN_DIR, `sherpa-onnx-offline${exeExt}`);
+  const sherpaVadExe = path.join(SHERPA_BIN_DIR, `sherpa-onnx-vad${exeExt}`);
+
+  if (fs.existsSync(whisperCliExe)) {
+    console.log(`Testing: ${whisperCliExe} --help`);
+    const t = spawnSync(whisperCliExe, ['--help'], { encoding: 'utf-8' });
+    const out = (t.stdout || '') + (t.stderr || '');
+    if (t.status === 0 || out.includes('usage:') || out.includes('-m FNAME') || out.includes('whisper-cli')) {
+      console.log('  -> Whisper CLI execution test: PASSED');
+    }
+  }
+
+  if (fs.existsSync(sherpaDiarizationExe)) {
+    console.log(`Testing: ${sherpaDiarizationExe} --help`);
+    const t = spawnSync(sherpaDiarizationExe, ['--help'], { encoding: 'utf-8' });
+    const out = (t.stdout || '') + (t.stderr || '');
+    if (t.status === 0 || out.includes('--segmentation-model') || out.includes('Usage:')) {
+      console.log('  -> Sherpa Diarization execution test: PASSED');
+    }
+  }
+
+  if (fs.existsSync(sherpaOfflineExe)) {
+    console.log(`Testing: ${sherpaOfflineExe} --help`);
+    const t = spawnSync(sherpaOfflineExe, ['--help'], { encoding: 'utf-8' });
+    const out = (t.stdout || '') + (t.stderr || '');
+    if (out.includes('--funasr-nano-encoder-adaptor') || t.status === 0) {
+      console.log('  -> Sherpa Offline execution test: PASSED');
+    }
+  }
+
+  if (fs.existsSync(sherpaVadExe)) {
+    console.log(`Testing: ${sherpaVadExe} --help`);
+    const t = spawnSync(sherpaVadExe, ['--help'], { encoding: 'utf-8' });
+    const out = (t.stdout || '') + (t.stderr || '');
+    if (out.includes('--silero-vad-model') || t.status === 0) {
+      console.log('  -> Sherpa VAD execution test: PASSED');
+    }
+  }
+}
+
 async function main() {
   console.log('====================================================');
   console.log('  Skipper STT & Diarization Engine / Model Downloader');
   console.log('====================================================\n');
+
+  if (BIN_ONLY) {
+    console.log('Mode: --bin-only (Downloading and verifying native engine binaries)\n');
+    await downloadWhisperBinary();
+    await downloadSherpaBinary();
+    verifyBinaries();
+    return;
+  }
 
   if (VAD_ONLY) {
     console.log('Mode: --vad-only (Downloading Silero-VAD model)\n');
@@ -290,44 +427,8 @@ async function main() {
   // ----------------------------------------------------
   // 1. Whisper.cpp Binary
   // ----------------------------------------------------
-  const whisperCliExe = path.join(WHISPER_BIN_DIR, `whisper-cli${exeExt}`);
-  if (fs.existsSync(whisperCliExe)) {
-    console.log(`[SKIP] Whisper binary already installed: ${whisperCliExe}`);
-  } else {
-    console.log(`[STEP 1/7] Downloading Whisper.cpp ${isWin ? 'Windows x64' : 'Linux x64'} binary...`);
-    const whisperArchiveName = isWin ? 'whisper-bin-x64.zip' : 'whisper-bin-ubuntu-x64.tar.gz';
-    const whisperZipUrl = `https://github.com/ggml-org/whisper.cpp/releases/download/b5130/${whisperArchiveName}`;
-    const whisperZipPath = path.join(CACHE_DIR, whisperArchiveName);
-    await downloadFile(whisperZipUrl, whisperZipPath, 5 * 1024 * 1024);
-
-    const tempExtractDir = path.join(CACHE_DIR, 'whisper-extract-temp');
-    if (fs.existsSync(tempExtractDir)) {
-      fs.rmSync(tempExtractDir, { recursive: true, force: true });
-    }
-    extractArchive(whisperZipPath, tempExtractDir);
-
-    // Whisper zip/tar contains files under Release/ or whisper-bin-ubuntu-x64/
-    const targetCliName = `whisper-cli${exeExt}`;
-    const foundExe = findFileRecursive(tempExtractDir, targetCliName);
-    if (!foundExe) {
-      throw new Error(`${targetCliName} not found in extracted whisper.cpp archive!`);
-    }
-    const exeDir = path.dirname(foundExe);
-    // Copy all files (including DLLs/SOs like whisper.dll, ggml*.dll, libwhisper.so) into WHISPER_BIN_DIR
-    const files = fs.readdirSync(exeDir);
-    for (const f of files) {
-      const srcFile = path.join(exeDir, f);
-      const destFile = path.join(WHISPER_BIN_DIR, f);
-      if (fs.statSync(srcFile).isFile()) {
-        fs.copyFileSync(srcFile, destFile);
-        if (!isWin) {
-          try { fs.chmodSync(destFile, 0o755); } catch {}
-        }
-      }
-    }
-    fs.rmSync(tempExtractDir, { recursive: true, force: true });
-    console.log(`[SUCCESS] Whisper.cpp installed to: ${WHISPER_BIN_DIR}\n`);
-  }
+  console.log('[STEP 1/7] Whisper.cpp Binary');
+  const whisperCliExe = await downloadWhisperBinary();
 
   // ----------------------------------------------------
   // 2. Whisper Small Model (ggml-small.bin)
@@ -360,45 +461,8 @@ async function main() {
   // ----------------------------------------------------
   // 4. Sherpa-onnx Diarization Binary
   // ----------------------------------------------------
-  const sherpaDiarizationExe = path.join(SHERPA_BIN_DIR, `sherpa-onnx-offline-speaker-diarization${exeExt}`);
-  if (fs.existsSync(sherpaDiarizationExe)) {
-    console.log(`[SKIP] Sherpa diarization binary already installed: ${sherpaDiarizationExe}`);
-  } else {
-    console.log(`[STEP 4/7] Downloading Sherpa-onnx static Release binary archive (${isWin ? 'Windows x64' : 'Linux x64'})...`);
-    const sherpaTarName = isWin
-      ? 'sherpa-onnx-v1.13.8-win-x64-static-MT-Release.tar.bz2'
-      : 'sherpa-onnx-v1.13.8-linux-x64-static.tar.bz2';
-    const sherpaTarUrl = `https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/${sherpaTarName}`;
-    const sherpaTarPath = path.join(CACHE_DIR, sherpaTarName);
-    await downloadFile(sherpaTarUrl, sherpaTarPath, 150 * 1024 * 1024);
-
-    const tempSherpaExtractDir = path.join(CACHE_DIR, 'sherpa-extract-temp');
-    if (fs.existsSync(tempSherpaExtractDir)) {
-      fs.rmSync(tempSherpaExtractDir, { recursive: true, force: true });
-    }
-    extractArchive(sherpaTarPath, tempSherpaExtractDir);
-
-    const targetDiarizeName = `sherpa-onnx-offline-speaker-diarization${exeExt}`;
-    const foundDiarize = findFileRecursive(tempSherpaExtractDir, targetDiarizeName);
-    if (!foundDiarize) {
-      throw new Error(`${targetDiarizeName} not found in extracted sherpa-onnx archive!`);
-    }
-    const sherpaExeDir = path.dirname(foundDiarize);
-    // Copy sherpa executables & companion dlls/exes into SHERPA_BIN_DIR
-    const sherpaFiles = fs.readdirSync(sherpaExeDir);
-    for (const f of sherpaFiles) {
-      const srcFile = path.join(sherpaExeDir, f);
-      const destFile = path.join(SHERPA_BIN_DIR, f);
-      if (fs.statSync(srcFile).isFile()) {
-        fs.copyFileSync(srcFile, destFile);
-        if (!isWin) {
-          try { fs.chmodSync(destFile, 0o755); } catch {}
-        }
-      }
-    }
-    fs.rmSync(tempSherpaExtractDir, { recursive: true, force: true });
-    console.log(`[SUCCESS] Sherpa-onnx installed to: ${SHERPA_BIN_DIR}\n`);
-  }
+  console.log('[STEP 4/7] Sherpa-onnx Diarization Binary');
+  const sherpaDiarizationExe = await downloadSherpaBinary();
 
   // ----------------------------------------------------
   // 5. Sherpa Pyannote Segmentation Model

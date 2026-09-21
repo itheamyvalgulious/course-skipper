@@ -12,6 +12,7 @@
     "test": "npm run build && electron dist/tests/integration.test.js",
     "cli": "npm run build && node dist/cli/index.js",
     "download:stt": "node scripts/download-stt-engines.js",
+    "download:bin": "node scripts/download-stt-engines.js --bin-only",
     "download:funasr": "node scripts/download-stt-engines.js --funasr-only",
     "download:vad": "node scripts/download-stt-engines.js --vad-only",
     "test:all": "npm run build && electron dist/tests/integration.test.js && electron dist/tests/stt.test.js && electron dist/tests/llmScreening.test.js"
