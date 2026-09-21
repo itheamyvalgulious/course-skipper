@@ -66,8 +66,13 @@ export class LiveBrowserWindow {
    */
   public setAudioMuted(muted: boolean): void {
     this.isAudioMuted = muted;
-    // Local speaker playback is controlled via Dashboard WebAudio gainNode
-    // without killing Chromium's media capture pipeline.
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.setAudioMuted(muted);
+    }
+  }
+
+  public getAudioMuted(): boolean {
+    return this.isAudioMuted;
   }
 
   /**
@@ -103,6 +108,8 @@ export class LiveBrowserWindow {
       },
     });
 
+    this.window.webContents.setAudioMuted(this.isAudioMuted);
+
     this.setupWindowMenu();
 
     // INTERCEPT POPUP WINDOWS: Always load links in the same LiveBrowserWindow
@@ -136,6 +143,16 @@ export class LiveBrowserWindow {
       }
     });
 
+    this.window.webContents.on('console-message', (_event, _level, message) => {
+      if (typeof message === 'string' && message.includes('__SKIPPER_CONFIRM_PLAY__')) {
+        console.log('[LiveBrowserWindow] User confirmed playback in live window. Auto-hiding and completing initialization...');
+        this.hide();
+        if (this.events.onInitializationRequested) {
+          this.events.onInitializationRequested();
+        }
+      }
+    });
+
     this.window.on('closed', () => {
       this.flushStorage();
       this.window = null;
@@ -146,11 +163,17 @@ export class LiveBrowserWindow {
 
     // When page finishes loading or DOM is ready, inject guards and floating status banner
     this.window.webContents.on('dom-ready', () => {
+      if (this.window && !this.window.isDestroyed()) {
+        this.window.webContents.setAudioMuted(this.isAudioMuted);
+      }
       this.injectSameWindowGuards();
       this.injectFloatingBar();
     });
 
     this.window.webContents.on('did-finish-load', () => {
+      if (this.window && !this.window.isDestroyed()) {
+        this.window.webContents.setAudioMuted(this.isAudioMuted);
+      }
       this.flushStorage();
       this.injectSameWindowGuards();
       this.injectFloatingBar();
@@ -348,16 +371,17 @@ export class LiveBrowserWindow {
         text.style.color = '#e4e4e7';
 
         const btn = document.createElement('button');
-        btn.innerText = '✅ 完成初始化';
+        btn.innerText = '✅ 确认播放';
         btn.style.cssText = 'background:#22c55e;color:#000;border:none;padding:5px 12px;border-radius:6px;font-weight:600;cursor:pointer;font-size:12px;transition:all 0.2s;';
         btn.onmouseover = () => btn.style.background = '#16a34a';
         btn.onmouseout = () => btn.style.background = '#22c55e';
         btn.onclick = () => {
-          btn.innerText = '✓ 已完成初始化';
+          btn.innerText = '✓ 正在监控 (窗口已隐藏)';
           btn.disabled = true;
           btn.style.background = '#4b5563';
           btn.style.color = '#9ca3af';
           text.innerText = 'Skipper: 监控中 (已置入后台运行)';
+          console.log('__SKIPPER_CONFIRM_PLAY__');
           window.postMessage({ type: 'SKIPPER_INIT_CLICK' }, '*');
         };
 

@@ -3,284 +3,420 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Skipper - 听课助手控制台</title>
+  <title>Skipper - 听课助手控制中心</title>
   <link rel="stylesheet" href="./dashboard.css">
 </head>
 <body>
-  <header>
-    <div class="logo-area">
-      <div class="logo-icon">🎓</div>
-      <div>
-        <h1>Skipper 控制台</h1>
-        <div class="subtitle">实时抓图抓音频 · Gemini 3.8 Live 听课助手 · 架构分层实现</div>
-      </div>
-    </div>
-    <div id="system-status-pill" class="status-badge status-idle">
-      <span class="status-dot"></span>
-      <span id="system-status-text">未初始化 (IDLE)</span>
-    </div>
-  </header>
-
-  <div class="grid">
-    <!-- 模块 1: 输入层 (Input Layer) -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">📥 输入层 (Input Layer)</span>
-        <span class="badge-tag" id="input-status-tag">等待浏览器操作</span>
+  <div class="app-layout">
+    <!-- 左侧侧边栏 (Sidebar) -->
+    <aside class="sidebar">
+      <div class="brand-area">
+        <div class="brand-icon">🎓</div>
+        <div class="brand-info">
+          <h1 class="brand-title">Skipper</h1>
+          <p class="brand-subtitle">听课助手控制中心</p>
+        </div>
       </div>
 
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-size: 13px; font-weight: 600;">1. 内置浏览器登录与播放</span>
-          <span style="font-size: 11px; color: #4ade80;">💾 登录态已持久化保存</span>
-        </div>
-        <div class="input-row" style="margin-bottom: 8px;">
-          <input type="text" id="browser-url" placeholder="学校直播网址 (例如 https://classroom.example.com)">
-          <button id="btn-open-browser" class="btn btn-outline">🌐 打开浏览器</button>
-        </div>
-        <div style="display: flex; gap: 8px;">
-          <button id="btn-complete-init" class="btn btn-success" style="flex: 2;">
-            ✅ 完成初始化 (视频已开始播放)
-          </button>
-          <button id="btn-toggle-browser-view" class="btn btn-secondary" style="flex: 1;">
-            👁 显/隐浏览器
-          </button>
-        </div>
-        <button id="btn-load-sample" class="btn btn-outline" style="margin-top: 6px; width: 100%; font-size: 12px; padding: 6px; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">
-          🎬 直接加载 10分钟课堂实录测试样例视频
+      <nav class="nav-tabs">
+        <button id="tab-main" class="nav-tab active" data-target="pane-main">
+          <span class="tab-icon">📌</span>
+          <span class="tab-label">控制台 (Main)</span>
         </button>
-      </div>
+        <button id="tab-setting" class="nav-tab" data-target="pane-setting">
+          <span class="tab-icon">⚙️</span>
+          <span class="tab-label">设置 (Settings)</span>
+        </button>
+        <button id="tab-debug" class="nav-tab" data-target="pane-debug">
+          <span class="tab-icon">🛠️</span>
+          <span class="tab-label">调试与提示词 (Debug)</span>
+        </button>
+        <button id="tab-extra" class="nav-tab nav-tab-disabled" title="后续版本扩展预留">
+          <span class="tab-icon">➕</span>
+          <span class="tab-label">更多扩展</span>
+        </button>
+      </nav>
 
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-size: 13px; font-weight: 600;">2. 抓图接口 (WebContents.capturePage)</span>
-          <button id="btn-test-capture" class="btn btn-outline" style="padding: 4px 10px; font-size: 11px;">
-            📸 单次抓图
-          </button>
+      <div class="sidebar-footer">
+        <div class="footer-label">系统状态</div>
+        <div id="system-status-pill" class="status-pill status-idle">
+          <span class="status-dot"></span>
+          <span id="system-status-text">未开始 (IDLE)</span>
         </div>
-        <div class="preview-box" id="preview-box">
-          <div class="preview-placeholder" id="preview-placeholder">
-            等待抓图...<br>
-            <small style="color: #64748b;">(监控开启后每 2.5 秒稀疏抓取一张 JPEG 发送给 Live 模型)</small>
+      </div>
+    </aside>
+
+    <!-- 右侧内容区域 (Content Area) -->
+    <main class="content-area">
+      <!-- 页面 1: 控制台 (Main Tab Pane) -->
+      <section id="pane-main" class="tab-pane active">
+        <!-- 网址栏与快捷打开 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🌐 直播课堂接入</h2>
+            <span class="badge badge-info" id="browser-status-tag">等待打开直播</span>
           </div>
-          <img id="preview-img" style="display: none;" alt="Live Frame">
-        </div>
-        <div class="stats-bar" style="margin-top: 4px;">
-          <span id="frame-info">分辨率: --</span>
-          <span id="frame-time">更新时间: --</span>
-        </div>
-      </div>
 
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-size: 13px; font-weight: 600;">3. 抓音频接口 (16kHz PCM 音频流)</span>
-          <button id="btn-toggle-audio-capture" class="btn btn-outline" style="padding: 4px 10px; font-size: 11px;">
-            🎙 激活音频采集
-          </button>
-        </div>
-        <div class="meter-container">
-          <span style="font-size: 12px; color: var(--text-muted); width: 50px;">音量电平:</span>
-          <div class="meter-bar-wrapper">
-            <div class="meter-fill" id="audio-meter-fill"></div>
+          <div class="input-group-row">
+            <input type="text" id="browser-url" placeholder="输入学校直播/录播网页网址 (如 https://...)" class="input-text">
+            <button id="btn-open-browser" class="btn btn-primary">
+              <span>🌐 打开直播</span>
+            </button>
+            <button id="btn-toggle-browser-view" class="btn btn-outline" title="切换内置浏览器前台显示/后台隐藏">
+              <span>👁 显/隐浏览器</span>
+            </button>
           </div>
-          <span id="audio-meter-text" style="font-size: 11px; width: 35px; text-align: right;">0%</span>
-        </div>
-        <div style="margin-top: 6px; padding: 6px 10px; background: rgba(56, 189, 248, 0.08); border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: #7dd3fc; user-select: none;">
-            <input type="checkbox" id="checkbox-mute-local" checked style="accent-color: #0284c7; cursor: pointer; width: 14px; height: 14px;">
-            <span>🔇 静音本地扬声器 (电脑不放声音，仅把音频传给 AI 监听)</span>
-          </label>
-        </div>
-        <div class="stats-bar" style="margin-top: 4px;">
-          <span id="audio-stream-status">状态: 待机</span>
-          <span id="audio-chunk-stats">接收数据包: 0</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- 模块 2 & 3: Provider 与 动作层 -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">🧠 Gemini Live Provider 与 动作层</span>
-        <span class="badge-tag" id="provider-badge-tag">Gemini Live 就绪</span>
-      </div>
-
-      <!-- Provider 封装配置 -->
-      <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 13px; font-weight: 600; color: #38bdf8;">🤖 AI Provider 连接模式</span>
-          <span class="badge-tag" id="provider-mode-tag" style="background: #065f46; color: #a7f3d0;">Mock 演练模式</span>
-        </div>
-
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px;">
-          <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-            <input type="radio" name="provider-mode" id="mode-aistudio" value="aistudio">
-            <span>🔵 Google AI Studio (API Key)</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-            <input type="radio" name="provider-mode" id="mode-vertex" value="vertex">
-            <span>🟣 Google Cloud Vertex AI</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-            <input type="radio" name="provider-mode" id="mode-mock" value="mock" checked>
-            <span>🧪 本地 Mock Server (10s 自动演练)</span>
-          </label>
-        </div>
-
-        <!-- AI Studio 配置区域 -->
-        <div id="aistudio-config-container" style="display: none;">
-          <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">
-            AI Studio API Key (或系统变量 <code>GEMINI_API_KEY</code>):
-          </label>
-          <div class="input-row">
-            <input type="password" id="gemini-api-key" placeholder="AIzaSy... (Google AI Studio API Key)">
-            <button id="btn-save-aistudio" class="btn btn-secondary">保存 AI Studio 配置</button>
+          <div class="guidance-banner">
+            <span class="guidance-icon">💡</span>
+            <span class="guidance-text">
+              在弹出窗口打开直播并开始播放。在弹出窗口点击顶部<strong>【✅ 确认播放】</strong>将自动隐藏窗口并开启程序监控。
+            </span>
           </div>
         </div>
 
-        <!-- Vertex AI 配置区域 -->
-        <div id="vertex-config-container" style="display: none; background: rgba(88, 28, 135, 0.15); padding: 10px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.3);">
-          <div style="font-size: 12px; font-weight: 600; color: #c084fc; margin-bottom: 6px;">
-            Google Cloud Vertex AI 凭据与区域配置:
+        <!-- 监控控制中心 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">⚡ 课堂监控调度</h2>
+            <span class="badge badge-muted" id="pipeline-status-text">待命就绪</span>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
-            <div>
-              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">GCP Project ID:</label>
-              <input type="text" id="vertex-project" placeholder="my-gcp-project-id" style="width: 100%; padding: 6px; font-size: 12px; border-radius: 4px; background: #090d16; border: 1px solid var(--border-color); color: #fff;">
+
+          <div class="controls-cluster">
+            <button id="btn-start" class="btn btn-success">
+              <span>🚀 开始监控</span>
+            </button>
+            <button id="btn-pause" class="btn btn-warning" disabled>
+              <span>⏸ 暂停监控</span>
+            </button>
+            <button id="btn-resume" class="btn btn-info" style="display: none;">
+              <span>▶ 恢复监控</span>
+            </button>
+            <button id="btn-stop" class="btn btn-danger" disabled>
+              <span>⏹ 停止监控</span>
+            </button>
+            <button id="btn-test-alert" class="btn btn-outline" style="margin-left: auto;">
+              <span>🔔 桌面提醒演练</span>
+            </button>
+          </div>
+
+          <!-- 实时音频电平与本地静音控制 -->
+          <div class="audio-strip">
+            <div class="meter-wrapper">
+              <span class="meter-label">🎙 音频电平:</span>
+              <div class="meter-track">
+                <div id="audio-meter-fill" class="meter-fill"></div>
+              </div>
+              <span id="audio-meter-text" class="meter-val">0%</span>
             </div>
-            <div>
-              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">Location (区域):</label>
-              <input type="text" id="vertex-location" placeholder="us-central1" value="us-central1" style="width: 100%; padding: 6px; font-size: 12px; border-radius: 4px; background: #090d16; border: 1px solid var(--border-color); color: #fff;">
+            <div class="mute-toggle-wrapper">
+              <label class="checkbox-label" for="checkbox-mute-local">
+                <input type="checkbox" id="checkbox-mute-local" checked>
+                <span>🔇 静音本地扬声器 (仅传给 AI 监听，电脑不发声)</span>
+              </label>
             </div>
           </div>
-          <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">Vertex API Key (可选，留空使用 ADC / gcloud 默认凭据):</label>
-            <input type="password" id="vertex-api-key" placeholder="可选 Vertex Express Key" style="width: 100%; padding: 6px; font-size: 12px; border-radius: 4px; background: #090d16; border: 1px solid var(--border-color); color: #fff; margin-bottom: 6px;">
-          </div>
-          <button id="btn-save-vertex" class="btn btn-primary" style="width: 100%; font-size: 12px; padding: 6px;">保存 Vertex AI 配置</button>
         </div>
 
-        <!-- Live 模型选择 -->
-        <div>
-          <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">
-            Live 模型名称 (Model ID):
-          </label>
-          <div class="input-row">
-            <select id="select-model" style="flex: 1; padding: 6px; font-size: 12px; border-radius: 4px; background: #090d16; border: 1px solid var(--border-color); color: #fff;">
-              <option value="gemini-3.8-live">gemini-3.8-live (AI Studio 默认稳定版)</option>
-              <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Vertex AI / Live Preview)</option>
-              <option value="gemini-2.0-flash-live-001">gemini-2.0-flash-live-001 (Vertex GA)</option>
-            </select>
-            <button id="btn-save-model" class="btn btn-secondary">更新模型</button>
+        <!-- 课堂音轨与主讲人识别 (Speaker Tracks & Teacher Resolution) -->
+        <div class="card" id="card-speaker-tracks">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h2 class="card-title">👥 课堂音轨与主讲老师 (Speaker Tracks & Roles)</h2>
+              <span class="badge badge-info" id="active-teacher-badge">主讲老师: 自动识别中</span>
+            </div>
+            <div class="teacher-select-wrapper">
+              <label for="select-manual-teacher" class="form-label-inline">主讲人绑定:</label>
+              <select id="select-manual-teacher" class="input-select-sm">
+                <option value="">🤖 自动判定 (每3分钟大模型研判)</option>
+              </select>
+            </div>
           </div>
-        </div>
-
-        <!-- 叫我条件 Prompt -->
-        <div>
-          <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">
-            设置叫我条件 (Wake Condition Prompt):
-          </label>
-          <div class="input-row">
-            <input type="text" id="user-prompt" value="当老师讲完当前知识点或证明时叫我">
-            <button id="btn-update-prompt" class="btn btn-secondary">保存条件</button>
+          <div id="speaker-tracks-container" class="tracks-list-container">
+            <div class="feed-empty">等待声纹分离与说话人检测（音频输入后自动生成各音轨与发言记录）</div>
           </div>
         </div>
 
-        <!-- Token 消耗统计 (usageMetadata) -->
-        <div style="background: #090d16; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <b style="color: #38bdf8;">📊 实时 Token 消耗 (usageMetadata):</b>
-            <span id="token-total-display" style="font-weight: 700; color: #a7f3d0;">总计: 0 tokens</span>
+        <!-- 实时语音转录流水 (Live Transcript Feed) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h2 class="card-title">📝 实时语音转录流水 (Live Transcript Feed)</h2>
+              <span class="feed-indicator"><span class="pulse-dot"></span> 实时滚动</span>
+            </div>
+            <button id="btn-clear-transcript" class="btn-xs btn-outline">清空转录</button>
           </div>
-          <div style="display: flex; justify-content: space-between; color: var(--text-muted); font-size: 11px;">
-            <span id="token-prompt-display">输入 (Prompt): 0 (音频: 0, 画面: 0, 文本: 0)</span>
-            <span id="token-response-display">输出 (Response): 0</span>
-          </div>
-        </div>
-
-        <button id="btn-mock-trigger" class="btn btn-warning" style="width: 100%;">
-          ⚡ 立即触发模拟 AI 识别条件达成 -> Tool Call 提醒
-        </button>
-      </div>
-
-      <!-- 动作层 (Action Layer) -->
-      <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 13px; font-weight: 600; color: #a855f7;">🔔 动作层 (Action Layer)</span>
-          <span class="badge-tag" style="background: #581c87; color: #e9d5ff;">系统原生弹窗与唤醒</span>
-        </div>
-        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
-          收到 <code>notify_user</code> tool call 时，弹出系统通知并唤醒直播窗口。
-        </p>
-        <button id="btn-test-action" class="btn btn-secondary" style="width: 100%;">
-          📢 测试桌面弹窗通知接口
-        </button>
-
-        <div style="margin-top: 10px; font-size: 12px; color: var(--text-muted);">
-          最近一次提醒内容:
-          <div id="last-notification-display" style="color: #f1f5f9; background: #090d16; padding: 8px; border-radius: 6px; margin-top: 4px; border: 1px solid var(--border-color); font-size: 12px;">
-            暂无提醒记录
+          <div id="transcript-feed" class="feed-container">
+            <div class="feed-empty">等待直播语音输入，识别的转录文本将在此处实时流水滚动显示...</div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- 模块 4: 处理层 (Processing Layer - 调度中枢) -->
-    <div class="card full-width">
-      <div class="card-header">
-        <span class="card-title">⚙️ 处理层 (Processing Layer - 调度中枢)</span>
-        <span class="badge-tag">调度输入层 + Gemini Live + 动作层</span>
-      </div>
+        <!-- 最新命中提醒卡片 (Latest Alert Card) -->
+        <div class="card alert-card-container">
+          <div class="card-header">
+            <h2 class="card-title">🚨 最近触发的提醒 (Latest Alert Card)</h2>
+            <span id="alert-badge" class="badge badge-warning">未触发</span>
+          </div>
+          <div id="latest-alert-card" class="alert-content-box">
+            <div class="alert-row">
+              <span class="alert-label">触发原因 (Reason):</span>
+              <span id="alert-reason" class="alert-value alert-highlight">暂无触发记录</span>
+            </div>
+            <div class="alert-row">
+              <span class="alert-label">内容摘要 (Summary):</span>
+              <span id="alert-summary" class="alert-value">监控启动后，当老师讲完目标知识点或题目时将呈现</span>
+            </div>
+            <div class="alert-row">
+              <span class="alert-label">命中目标 (Matched):</span>
+              <span id="alert-matched-goals" class="alert-value">--</span>
+            </div>
+            <div class="alert-footer">
+              <span>置信度评分: <strong id="alert-confidence">--</strong></span>
+              <span>触发时间: <span id="alert-time">--</span></span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-        <div class="controls-cluster">
-          <button id="btn-start" class="btn btn-success" style="padding: 10px 20px; font-size: 14px;">
-            🚀 开始监控 (Start Monitoring)
-          </button>
-          <button id="btn-pause" class="btn btn-warning" disabled>
-            ⏸ 暂停 (Pause)
-          </button>
-          <button id="btn-resume" class="btn btn-secondary" style="display: none;">
-            ▶ 恢复 (Resume)
-          </button>
-          <button id="btn-stop" class="btn btn-danger" disabled>
-            ⏹ 停止 (Stop)
-          </button>
+      <!-- 页面 2: 设置 (Settings Tab Pane) -->
+      <section id="pane-setting" class="tab-pane">
+        <!-- Section 1: 用户目标列表设定 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🎯 监控目标设定 (User Goals)</h2>
+            <div class="logic-selector">
+              <label class="radio-label">
+                <input type="radio" name="goal-logic" id="logic-or" value="OR" checked>
+                <span>OR (任一目标满足即提醒)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="goal-logic" id="logic-and" value="AND">
+                <span>AND (所有目标均满足才提醒)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="presets-row">
+            <span class="presets-label">⚡ 快捷预设:</span>
+            <button id="btn-preset-goal-1" class="btn-preset">
+              ➕ 目标1: 一个知识点,证明或题目已经讲解完成,且已经开始讲解下一个内容板块
+            </button>
+            <button id="btn-preset-goal-2" class="btn-preset">
+              ➕ 目标2: 老师写完一道题目 同学们该做了
+            </button>
+          </div>
+
+          <!-- 动态目标列表 -->
+          <div id="goals-list-container" class="goals-list">
+            <!-- Dynamic items rendered via JS -->
+          </div>
+
+          <!-- 添加新目标输入行 -->
+          <div class="input-group-row" style="margin-top: 12px;">
+            <input type="text" id="input-custom-goal" placeholder="输入自定义监听关注目标 (如: 老师开始讲解傅里叶变换的收敛性定理)" class="input-text">
+            <button id="btn-add-goal" class="btn btn-secondary">
+              <span>➕ 添加新目标</span>
+            </button>
+          </div>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 10px; font-size: 13px;">
-          <span style="color: var(--text-muted);">截图采样:</span>
-          <span style="color: #38bdf8; font-weight: 600;">2.5 秒 / 稀疏帧</span>
-          <span style="color: var(--text-muted); margin-left: 12px;">音频:</span>
-          <span style="color: #4ade80; font-weight: 600;">16kHz PCM 流</span>
-        </div>
-      </div>
+        <!-- Section 2: LLM API 配置 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🤖 LLM API 配置 (大模型推理引擎)</h2>
+            <span class="badge badge-info">OpenAI / Gemini 兼容接口</span>
+          </div>
 
-      <!-- 实时日志控制台 -->
-      <div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">运行日志 (Event Log)</span>
-          <button id="btn-clear-log" class="btn-outline" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">清空日志</button>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label">Base URL (API 地址):</label>
+              <input type="text" id="llm-base-url" class="input-text" value="https://api.deepseek.com">
+            </div>
+
+            <div class="form-group full-width">
+              <label class="form-label">API Key (接口凭据密钥):</label>
+              <input type="password" id="llm-api-key" class="input-text" value="sk-a1cb432e809a48f1887013e73f09d96b">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Model Name (模型标识):</label>
+              <input type="text" id="llm-model" class="input-text" value="deepseek-v4-flash">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Max Context Tokens (最大上下文容量):</label>
+              <input type="number" id="llm-max-tokens" class="input-text" value="8192" min="1024" max="131072">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Compact Threshold Ratio (自动压缩触发比例):</label>
+              <input type="number" id="llm-compact-ratio" class="input-text" value="0.60" step="0.05" min="0.2" max="0.95">
+              <span class="form-hint">上下文达到 60% 时自动启动背景知识精简总结压缩</span>
+            </div>
+          </div>
         </div>
-        <div class="log-container" id="log-container">
-          <div class="log-entry"><span class="log-time">[Init]</span> Skipper 听课助手控制中心已启动</div>
-          <div class="log-entry"><span class="log-time">[Init]</span> 输入层、Gemini Live Provider、动作层已就绪</div>
+
+        <!-- Section 3: STT Provider 配置 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🎙️ STT 语音识别配置 (Speech-to-Text)</h2>
+            <span class="badge badge-secondary">语音转文字管线</span>
+          </div>
+
+          <div class="radio-cards-row">
+            <label class="radio-card">
+              <input type="radio" name="stt-provider" id="stt-google" value="google">
+              <div class="radio-card-content">
+                <div class="radio-card-title">🌐 Google Cloud STT</div>
+                <div class="radio-card-desc">云端低延迟流式识别，需配置 GCP Speech API Key</div>
+              </div>
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="stt-provider" id="stt-cpu" value="cpu" checked>
+              <div class="radio-card-content">
+                <div class="radio-card-title">💻 本地无N卡 (whisper.cpp / CPU 滚动窗口)</div>
+                <div class="radio-card-desc">纯 CPU 离线运行，无需独立显卡，基于滚动窗口识别</div>
+              </div>
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="stt-provider" id="stt-funasr" value="funasr">
+              <div class="radio-card-content">
+                <div class="radio-card-title">🚀 Fun-ASR-Nano (通义语音大模型 / INT8)</div>
+                <div class="radio-card-desc">阿里通义 800M 端到端语音识别大模型，纯离线极速，抗幻觉强</div>
+              </div>
+            </label>
+          </div>
+
+          <div id="stt-google-container" class="form-group" style="margin-top: 12px; display: none;">
+            <label class="form-label">Google Cloud API Key (可选):</label>
+            <input type="password" id="stt-google-key" class="input-text" placeholder="AIzaSy... (留空则尝试默认凭证)">
+          </div>
+
+          <div class="form-grid" style="margin-top: 12px;">
+            <div class="form-group">
+              <label class="form-label">识别语言代码 (Language Code):</label>
+              <input type="text" id="stt-language-code" class="input-text" value="zh-CN">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">滚动窗口时长 (Rolling Window seconds):</label>
+              <input type="number" id="stt-rolling-window" class="input-text" value="25" min="5" max="120">
+            </div>
+
+            <div class="form-group" id="stt-whisper-model-group">
+              <label class="form-label">Whisper 本地模型 (Model Size):</label>
+              <select id="stt-whisper-model" class="input-text">
+                <option value="small" selected>Small (465MB, 推荐CPU实时, RTF ~0.67)</option>
+                <option value="medium">Medium (1.43GB, 适合高性能CPU, RTF ~2.0)</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="stt-sherpa-model-group">
+              <label class="form-label">Sherpa 声纹分离模型 (Embedding Model):</label>
+              <select id="stt-sherpa-model" class="input-text">
+                <option value="campplus" selected>Campplus (27MB, 轻量极速, RTF ~0.21)</option>
+                <option value="eres2netv2">ERes2NetV2 (68MB, 高精细, RTF ~0.73)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="action-footer" style="margin-top: 16px;">
+            <button id="btn-save-all-settings" class="btn btn-primary btn-large">
+              <span>💾 保存全部设置</span>
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <!-- 页面 3: 调试与提示词 (Debug Tab Pane) -->
+      <section id="pane-debug" class="tab-pane">
+        <!-- Section 1: 提示词在线设置 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📝 提示词在线设置 (独立配置文件 skipper-prompts.json)</h2>
+            <span class="badge badge-warning">实时生效</span>
+          </div>
+
+          <div class="prompt-box">
+            <div class="prompt-header">
+              <label class="form-label"><strong>1. 系统提示词 (System Prompt - 课堂监控判定逻辑):</strong></label>
+              <button id="btn-save-system-prompt" class="btn-xs btn-primary">💾 保存系统提示词</button>
+            </div>
+            <textarea id="textarea-system-prompt" class="textarea-prompt" rows="9"></textarea>
+          </div>
+
+          <div class="prompt-box" style="margin-top: 14px;">
+            <div class="prompt-header">
+              <label class="form-label"><strong>2. 紧凑压缩提示词 (Compact Prompt - 上下文历史归纳压缩):</strong></label>
+              <button id="btn-save-compact-prompt" class="btn-xs btn-primary">💾 保存压缩提示词</button>
+            </div>
+            <textarea id="textarea-compact-prompt" class="textarea-prompt" rows="7"></textarea>
+          </div>
+        </div>
+
+        <!-- Section 2: 阈值与常量设置 -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">⏱️ 阈值与常量设置 (独立配置文件 skipper-constants.json)</h2>
+            <button id="btn-save-constants" class="btn btn-primary">
+              <span>💾 保存阈值常量</span>
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">停顿检测阈值 (秒 - 老师静音停顿即触发):</label>
+              <input type="number" id="constant-pause-threshold" class="input-text" value="3.0" step="0.5" min="1.0" max="15.0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">最小调用间隔 (秒 - 避免过频调用大模型):</label>
+              <input type="number" id="constant-min-interval" class="input-text" value="10.0" step="1.0" min="2.0" max="60.0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">最大触发间隔 (秒 - 超时强行周期检查):</label>
+              <input type="number" id="constant-max-interval" class="input-text" value="60.0" step="5.0" min="10.0" max="300.0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">上下文 Compact 触发比例 (Ratio):</label>
+              <input type="number" id="constant-compact-ratio" class="input-text" value="0.60" step="0.05" min="0.2" max="0.95">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: 运行日志 (Event Log) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h2 class="card-title">📜 运行日志 (Event Log)</h2>
+              <span class="badge badge-muted">系统事件 · STT转录 · LLM判定</span>
+            </div>
+            <button id="btn-clear-log" class="btn-xs btn-outline">清空日志</button>
+          </div>
+          <div id="log-container" class="log-container">
+            <div class="log-entry"><span class="log-time">[Init]</span> Skipper 听课助手控制中心已就绪</div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
+  <!-- 浮动通知提示 (Toast Container) -->
+  <div id="toast-container" class="toast-container"></div>
+
   <script>
-    // Polyfill to prevent CommonJS exports error in browser context
     window.exports = window.exports || {};
-    // Global error handler to surface errors in dashboard event log
     window.onerror = function(msg, url, line, col, error) {
       console.error('[Dashboard Error]', msg, error);
       const container = document.getElementById('log-container');
       if (container) {
         const entry = document.createElement('div');
-        entry.className = 'log-entry';
-        entry.innerHTML = `<span class="log-time">[UI Error]</span> <span style="color:#ef4444;font-weight:600;">错误: ${msg} (行 ${line})</span>`;
+        entry.className = 'log-entry log-entry-error';
+        entry.innerHTML = `<span class="log-time">[Error]</span> 脚本异常: ${msg} (行 ${line})`;
         container.appendChild(entry);
       }
     };
@@ -288,4 +424,3 @@
   <script src="./dashboard.js"></script>
 </body>
 </html>
-

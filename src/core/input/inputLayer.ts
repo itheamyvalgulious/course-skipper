@@ -34,9 +34,7 @@ export class InputLayer extends EventEmitter implements IInputLayer {
       },
     });
 
-    if (this.muteLocalPlayback) {
-      this.browser.setAudioMuted(true);
-    }
+    this.browser.setAudioMuted(this.muteLocalPlayback);
 
     this.setupDisplayMediaHandler();
   }
@@ -84,9 +82,9 @@ export class InputLayer extends EventEmitter implements IInputLayer {
         callback({
           video: mainFrame,
           audio: mainFrame,
-          // Suppress browser window direct speaker echo; local speaker playback is
-          // exclusively and dynamically controlled via Dashboard WebAudio speakerGainNode.
-          enableLocalEcho: false,
+          // Enable local echo so live window audio plays to speakers when unmuted.
+          // Physical speaker playback is muted or unmuted directly via LiveBrowserWindow webContents.setAudioMuted(muted).
+          enableLocalEcho: true,
         });
       } else {
         callback({});

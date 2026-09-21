@@ -9,23 +9,33 @@ dist-electron/
 
 # Application runtime & local data
 .skipper-data/
+resources/bin/
+resources/models/
+resources/.cache/
+*.bin
+*.onnx
 
 # Large media & video files (never commit to git)
 test-assets/*.mp4
 test-assets/*.mkv
 test-assets/*.avi
 test-assets/*.mov
+test-assets/*.mp3
+test-assets/*.wav
 *.mp4
 *.mkv
 *.avi
 *.mov
 *.flv
+*.mp3
+*.wav
 
 # Benchmark & test outputs
 benchmark-results/
 test-results/
 
 # Scratch & temporary experiment files
+scratch/
 scratch_*
 *.tmp
 *.temp

@@ -31,12 +31,14 @@ export type ProcessingState =
 
 export interface SkipperStatus {
   state: ProcessingState;
-  browserUrl: string;
+  browserUrl?: string;
   isBrowserOpen: boolean;
   isInitialized: boolean;
-  isAudioActive: boolean;
+  isAudioActive?: boolean;
+  isAiConnected?: boolean;
   audioLevel: number;
-  userPrompt: string;
+  userPrompt?: string;
+  currentCondition?: string;
   framesProcessed: number;
   audioChunksProcessed: number;
   lastNotification?: {
@@ -46,4 +48,5 @@ export interface SkipperStatus {
     summary?: string;
     timestamp: number;
   };
+  lastActiveTimestamp?: number;
 }

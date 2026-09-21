@@ -1,21 +1,22 @@
 import { EventEmitter } from 'events';
 import { IInputLayer } from '../input/types';
 import { IActionLayer } from '../action/types';
-import { IAIProvider, NotificationTrigger } from '../provider/types';
+import { ISTTProvider, STTSegment } from '../stt';
+import { ScreeningEngine, ScreeningVerdict, EvaluationLog } from '../llm';
 import { IProcessingLayer, ProcessingOptions } from './types';
 import { ProcessingState, SkipperStatus, FrameData, AudioChunk } from '../../common/types';
 
 export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
   private inputLayer: IInputLayer;
   private actionLayer: IActionLayer;
-  private provider: IAIProvider;
+  private sttProvider: ISTTProvider;
+  private screeningEngine: ScreeningEngine;
 
   private _state: ProcessingState = 'idle';
   private frameIntervalMs: number = 2500;
-  private heartbeatIntervalMs: number = 10000; // 10s heartbeat evaluation
   private frameTimer: NodeJS.Timeout | null = null;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
   private isCapturing: boolean = false;
+  private autoStartOnReady: boolean = true;
 
   private userPrompt: string = '当老师讲完当前知识点或证明时叫我';
   private framesProcessedCount: number = 0;
@@ -26,16 +27,21 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
   constructor(
     inputLayer: IInputLayer,
     actionLayer: IActionLayer,
-    provider: IAIProvider,
+    sttProvider: ISTTProvider,
+    screeningEngine: ScreeningEngine,
     options: ProcessingOptions = {}
   ) {
     super();
     this.inputLayer = inputLayer;
     this.actionLayer = actionLayer;
-    this.provider = provider;
+    this.sttProvider = sttProvider;
+    this.screeningEngine = screeningEngine;
 
     if (options.frameIntervalMs) {
       this.frameIntervalMs = options.frameIntervalMs;
+    }
+    if (options.autoStartOnReady !== undefined) {
+      this.autoStartOnReady = options.autoStartOnReady;
     }
 
     this.setupListeners();
@@ -43,6 +49,43 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
 
   public get state(): ProcessingState {
     return this._state;
+  }
+
+  public getSTTProvider(): ISTTProvider {
+    return this.sttProvider;
+  }
+
+  public setSTTProvider(provider: ISTTProvider): void {
+    if (this.sttProvider === provider) return;
+    const wasRunning = this.sttProvider.isRunning;
+    if (wasRunning) {
+      this.sttProvider.stop().catch(() => {});
+    }
+    this.sttProvider = provider;
+    this.screeningEngine.attachSTT(provider);
+    this.setupSTTListeners();
+    if (wasRunning && this._state === 'monitoring') {
+      this.sttProvider.start().catch((err) => {
+        console.error('[ProcessingLayer] Error starting new STT provider:', err);
+      });
+    }
+  }
+
+  public getScreeningEngine(): ScreeningEngine {
+    return this.screeningEngine;
+  }
+
+  public getSpeakerTracks(): any[] {
+    if (typeof (this.sttProvider as any).getSpeakerTracks === 'function') {
+      return (this.sttProvider as any).getSpeakerTracks();
+    }
+    return [];
+  }
+
+  public setManualTeacher(speakerId: string | null): void {
+    if (typeof (this.sttProvider as any).setManualTeacher === 'function') {
+      (this.sttProvider as any).setManualTeacher(speakerId);
+    }
   }
 
   private setState(newState: ProcessingState): void {
@@ -54,35 +97,46 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
   }
 
   private setupListeners(): void {
-    // 1. Listen for AI Provider notification triggers -> dispatch to Action Layer
-    this.provider.onNotificationTrigger(async (trigger: NotificationTrigger) => {
-      console.log('[ProcessingLayer] Received notification trigger from Provider:', trigger);
+    // 1. Attach STT to screening engine & setup STT listeners
+    this.screeningEngine.attachSTT(this.sttProvider);
+    this.setupSTTListeners();
+
+    // 2. Setup STT listeners
+    this.setupSTTListeners();
+
+    // 3. Listen for LLM Screening Alerts -> trigger Action Layer notification
+    this.screeningEngine.on('alert', async (verdict: ScreeningVerdict) => {
+      console.log('[ProcessingLayer] 🔔 Screening condition triggered by LLM:', verdict.summary);
       this.lastNotificationInfo = {
         title: 'Skipper 课堂提醒',
-        body: `【${trigger.reason}】\n${trigger.summary}`,
-        reason: trigger.reason,
-        summary: trigger.summary,
-        timestamp: trigger.timestamp,
+        body: `【${verdict.reason}】\n${verdict.summary}`,
+        reason: verdict.reason,
+        summary: verdict.summary,
+        timestamp: Date.now(),
       };
 
       await this.actionLayer.notify({
         title: '🔔 Skipper 课堂提醒',
-        body: `【${trigger.reason}】\n${trigger.summary}`,
-        reason: trigger.reason,
-        summary: trigger.summary,
+        body: `【${verdict.reason}】\n${verdict.summary}`,
+        reason: verdict.reason,
+        summary: verdict.summary,
       });
 
+      this.emit('screeningAlert', verdict);
       this.emit('statusUpdate', this.getStatus());
     });
 
-    // 2. Listen to Audio Stream events from Input Layer -> pipe to Provider
+    // 4. Forward LLM evaluation logs (for Debug panel & CLI)
+    this.screeningEngine.on('evaluation', (log: EvaluationLog) => {
+      this.emit('evaluationLog', log);
+    });
+
+    // 5. Pipe audio from input layer into STT provider
     const audioStream = this.inputLayer.getAudioStream();
     audioStream.on('data', (chunk: AudioChunk) => {
       if (this._state === 'monitoring') {
         this.audioChunksProcessedCount++;
-        this.provider.sendAudioChunk(chunk.buffer).catch((err) => {
-          console.error('[ProcessingLayer] Error piping audio to provider:', err);
-        });
+        this.sttProvider.feedAudio(chunk.buffer);
       }
     });
 
@@ -91,25 +145,64 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
       this.emit('audioLevel', level);
     });
 
-    // 3. Listen to input layer events
-    this.inputLayer.on('initialized', () => {
-      if (this._state === 'initializing' || this._state === 'idle') {
+    // 6. When user confirms in browser window, auto-hide and auto-start monitoring
+    this.inputLayer.on('initialized', async () => {
+      console.log('[ProcessingLayer] Input layer confirmed initialized.');
+      if (this.autoStartOnReady && this._state !== 'monitoring') {
+        console.log('[ProcessingLayer] Auto-starting monitoring upon user confirmation...');
+        try {
+          await this.startMonitoring();
+        } catch (err: any) {
+          console.error('[ProcessingLayer] Failed to auto-start monitoring:', err?.message);
+        }
+      } else if (this._state === 'initializing' || this._state === 'idle') {
         this.setState('ready');
       }
     });
   }
 
-  /**
-   * Initializes the pipeline:
-   * Opens live browser for user to log in and play video,
-   * then completes initialization on user confirmation.
-   */
+  private setupSTTListeners(): void {
+    this.sttProvider.on('segment', (segment: STTSegment) => {
+      this.emit('transcriptSegment', segment);
+
+      // Trigger 3-minute automatic teacher inference if applicable
+      if (typeof (this.sttProvider as any).getTeacherResolver === 'function') {
+        const resolver = (this.sttProvider as any).getTeacherResolver();
+        const llmClient = this.screeningEngine.getLLMClient();
+        if (llmClient) {
+          resolver.maybeInferTeacherViaLLM(llmClient, segment.endTime).catch((err: any) => {
+            console.warn('[ProcessingLayer] Automatic teacher resolution error:', err?.message || err);
+          });
+        }
+      }
+    });
+
+    this.sttProvider.on('error', (err: Error) => {
+      console.error('[ProcessingLayer] STT Provider error:', err.message);
+      this.emit('error', err);
+    });
+
+    if (typeof (this.sttProvider as any).getTeacherResolver === 'function') {
+      const resolver = (this.sttProvider as any).getTeacherResolver();
+      resolver.on('tracksUpdated', (tracks: any) => {
+        this.emit('speakerTracksUpdated', tracks);
+      });
+      resolver.on('teacherChanged', (newTeacherId: string, isManual: boolean, reason?: string) => {
+        this.emit('teacherChanged', { teacherId: newTeacherId, isManual, reason });
+      });
+    }
+  }
+
   public async initialize(url?: string): Promise<boolean> {
     this.setState('initializing');
     try {
       const ready = await this.inputLayer.initialize(url);
       if (ready) {
-        this.setState('ready');
+        if (this.autoStartOnReady) {
+          await this.startMonitoring();
+        } else {
+          this.setState('ready');
+        }
         return true;
       }
       this.setState('idle');
@@ -121,17 +214,10 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
     }
   }
 
-  /**
-   * Start monitoring classroom live stream
-   */
   public async startMonitoring(prompt?: string): Promise<void> {
     if (this._state === 'monitoring') {
       console.log('[ProcessingLayer] Already monitoring');
       return;
-    }
-
-    if (!this.inputLayer.isInitialized) {
-      throw new Error('Cannot start monitoring: Input layer is not initialized. Please complete browser setup first.');
     }
 
     if (prompt) {
@@ -140,56 +226,40 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
 
     this.setState('monitoring');
 
-    // Connect provider if not connected
-    if (!this.provider.isConnected) {
-      await this.provider.connect();
+    // Start STT provider
+    if (!this.sttProvider.isRunning) {
+      await this.sttProvider.start();
     }
-    this.provider.setUserPrompt(this.userPrompt);
 
     // Start audio stream
     await this.inputLayer.getAudioStream().start();
 
-    // Start periodic screenshot capture
+    // Start periodic screenshot capture (for manual inspection or future OCR)
     this.startFrameCaptureLoop();
-
-    // Start 10-second heartbeat reasoning evaluation loop
-    this.startHeartbeatLoop();
   }
 
-  /**
-   * Pause monitoring (temporarily halt screenshots, heartbeat and audio piping)
-   */
   public pauseMonitoring(): void {
     if (this._state !== 'monitoring') return;
 
     this.stopFrameCaptureLoop();
-    this.stopHeartbeatLoop();
     this.inputLayer.getAudioStream().pause();
     this.setState('paused');
   }
 
-  /**
-   * Resume monitoring
-   */
   public resumeMonitoring(): void {
     if (this._state !== 'paused') return;
 
     this.setState('monitoring');
     this.inputLayer.getAudioStream().resume();
     this.startFrameCaptureLoop();
-    this.startHeartbeatLoop();
   }
 
-  /**
-   * Stop monitoring completely
-   */
   public async stopMonitoring(): Promise<void> {
     this.stopFrameCaptureLoop();
-    this.stopHeartbeatLoop();
     await this.inputLayer.getAudioStream().stop();
 
-    if (this.provider.isConnected) {
-      await this.provider.disconnect();
+    if (this.sttProvider.isRunning) {
+      await this.sttProvider.stop();
     }
 
     this.setState(this.inputLayer.isInitialized ? 'ready' : 'idle');
@@ -197,7 +267,7 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
 
   public setUserPrompt(prompt: string): void {
     this.userPrompt = prompt;
-    this.provider.setUserPrompt(prompt);
+    this.screeningEngine.setUserGoals([{ id: 'custom_1', text: prompt, enabled: true }]);
     console.log(`[ProcessingLayer] User condition prompt set to: "${prompt}"`);
     this.emit('statusUpdate', this.getStatus());
   }
@@ -215,9 +285,6 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
     }
   }
 
-  /**
-   * Capture a single frame right now (for testing or manual inspection)
-   */
   public async captureSingleFrame(): Promise<FrameData | null> {
     if (!this.inputLayer.isBrowserOpen) return null;
     try {
@@ -230,9 +297,6 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
     }
   }
 
-  /**
-   * Test the action layer notification directly
-   */
   public async testNotification(
     reason: string = '测试通知',
     summary: string = '这是一条测试弹窗提醒：Skipper 运行正常！'
@@ -242,10 +306,7 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
 
   private startFrameCaptureLoop(): void {
     this.stopFrameCaptureLoop();
-
-    // Trigger an immediate frame capture
     this.captureAndProcessFrame();
-
     this.frameTimer = setInterval(() => {
       this.captureAndProcessFrame();
     }, this.frameIntervalMs);
@@ -258,41 +319,17 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
     }
   }
 
-  private startHeartbeatLoop(): void {
-    if (this.heartbeatTimer) return;
-    this.heartbeatTimer = setInterval(() => {
-      if (this._state === 'monitoring' && this.provider.isConnected) {
-        if (this.provider.sendHeartbeat) {
-          this.provider.sendHeartbeat().catch((err) => {
-            console.error('[ProcessingLayer] Error in periodic heartbeat evaluation:', err?.message);
-          });
-        }
-      }
-    }, this.heartbeatIntervalMs);
-  }
-
-  private stopHeartbeatLoop(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-  }
-
   private async captureAndProcessFrame(): Promise<void> {
-    if (this._state !== 'monitoring' || this.isCapturing) return;
-
+    if (this.isCapturing || this._state !== 'monitoring') return;
     this.isCapturing = true;
     try {
-      const frame = await this.inputLayer.getCurrentFrame({ quality: 80, format: 'jpeg' });
-      this.framesProcessedCount++;
-
-      // Send frame to AI Provider
-      await this.provider.sendFrame(frame.buffer, frame.mimeType);
-
-      // Notify dashboard for live preview
-      this.emit('frameProcessed', frame);
-    } catch (err) {
-      console.error('[ProcessingLayer] Error capturing or processing frame:', err);
+      if (this.inputLayer.isBrowserOpen) {
+        const frame = await this.inputLayer.getCurrentFrame({ quality: 75, format: 'jpeg' });
+        this.framesProcessedCount++;
+        this.emit('frameProcessed', frame);
+      }
+    } catch (err: any) {
+      // Ignored if window temporarily unavailable
     } finally {
       this.isCapturing = false;
     }
@@ -301,15 +338,15 @@ export class ProcessingLayer extends EventEmitter implements IProcessingLayer {
   public getStatus(): SkipperStatus {
     return {
       state: this._state,
-      browserUrl: (this.inputLayer as any).getLiveBrowser?.().getUrl() || '',
-      isBrowserOpen: this.inputLayer.isBrowserOpen,
       isInitialized: this.inputLayer.isInitialized,
-      isAudioActive: this.inputLayer.getAudioStream().isStreaming,
-      audioLevel: this.currentAudioLevel,
-      userPrompt: this.userPrompt,
+      isBrowserOpen: this.inputLayer.isBrowserOpen,
+      isAiConnected: this.sttProvider.isRunning,
       framesProcessed: this.framesProcessedCount,
       audioChunksProcessed: this.audioChunksProcessedCount,
+      audioLevel: this.currentAudioLevel,
+      currentCondition: this.userPrompt,
       lastNotification: this.lastNotificationInfo,
+      lastActiveTimestamp: Date.now(),
     };
   }
 

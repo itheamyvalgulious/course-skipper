@@ -1,159 +1,221 @@
-// Skipper Dashboard Frontend Logic
-interface Window {
-  skipperAPI?: any;
+/**
+ * Skipper - Classroom Live Stream AI Assistant
+ * Dashboard Controller & Frontend Logic
+ */
+
+interface GoalItem {
+  id: string;
+  text: string;
+  enabled: boolean;
 }
 
-// DOM Elements
+// Global State
+let currentGoals: GoalItem[] = [];
+let currentGoalLogic: 'OR' | 'AND' = 'OR';
+let isBrowserVisible = true;
+
+// WebAudio Capturer State
+let audioContext: AudioContext | null = null;
+let mediaStream: MediaStream | null = null;
+let isCapturingAudio = false;
+
+// DOM Elements: Navigation & Sidebar
+const tabs = document.querySelectorAll<HTMLButtonElement>('.nav-tab');
 const statusPill = document.getElementById('system-status-pill')!;
 const statusText = document.getElementById('system-status-text')!;
-const inputStatusTag = document.getElementById('input-status-tag')!;
 
+// DOM Elements: Main Pane
 const inputBrowserUrl = document.getElementById('browser-url') as HTMLInputElement;
 const btnOpenBrowser = document.getElementById('btn-open-browser')!;
-const btnCompleteInit = document.getElementById('btn-complete-init')!;
 const btnToggleBrowserView = document.getElementById('btn-toggle-browser-view')!;
-const btnLoadSample = document.getElementById('btn-load-sample')!;
-
-const btnTestCapture = document.getElementById('btn-test-capture')!;
-const previewPlaceholder = document.getElementById('preview-placeholder')!;
-const previewImg = document.getElementById('preview-img') as HTMLImageElement;
-const frameInfo = document.getElementById('frame-info')!;
-const frameTime = document.getElementById('frame-time')!;
-
-const btnToggleAudioCapture = document.getElementById('btn-toggle-audio-capture')!;
-const checkboxMuteLocal = document.getElementById('checkbox-mute-local') as HTMLInputElement;
-const audioMeterFill = document.getElementById('audio-meter-fill')!;
-const audioMeterText = document.getElementById('audio-meter-text')!;
-const audioStreamStatus = document.getElementById('audio-stream-status')!;
-const audioChunkStats = document.getElementById('audio-chunk-stats')!;
-
-const providerBadgeTag = document.getElementById('provider-badge-tag')!;
-const providerModeTag = document.getElementById('provider-mode-tag')!;
-const radioAIStudio = document.getElementById('mode-aistudio') as HTMLInputElement;
-const radioVertex = document.getElementById('mode-vertex') as HTMLInputElement;
-const radioMock = document.getElementById('mode-mock') as HTMLInputElement;
-
-const aistudioContainer = document.getElementById('aistudio-config-container')!;
-const vertexContainer = document.getElementById('vertex-config-container')!;
-
-const inputApiKey = document.getElementById('gemini-api-key') as HTMLInputElement;
-const btnSaveAIStudio = document.getElementById('btn-save-aistudio')!;
-
-const inputVertexProject = document.getElementById('vertex-project') as HTMLInputElement;
-const inputVertexLocation = document.getElementById('vertex-location') as HTMLInputElement;
-const inputVertexApiKey = document.getElementById('vertex-api-key') as HTMLInputElement;
-const btnSaveVertex = document.getElementById('btn-save-vertex')!;
-
-const inputUserPrompt = document.getElementById('user-prompt') as HTMLInputElement;
-const btnUpdatePrompt = document.getElementById('btn-update-prompt')!;
-const selectModel = document.getElementById('select-model') as HTMLSelectElement;
-const btnSaveModel = document.getElementById('btn-save-model')!;
-const btnMockTrigger = document.getElementById('btn-mock-trigger')!;
-
-const tokenTotalDisplay = document.getElementById('token-total-display')!;
-const tokenPromptDisplay = document.getElementById('token-prompt-display')!;
-const tokenResponseDisplay = document.getElementById('token-response-display')!;
-
-const btnTestAction = document.getElementById('btn-test-action')!;
-const lastNotificationDisplay = document.getElementById('last-notification-display')!;
+const browserStatusTag = document.getElementById('browser-status-tag')!;
+const pipelineStatusText = document.getElementById('pipeline-status-text')!;
 
 const btnStart = document.getElementById('btn-start') as HTMLButtonElement;
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement;
 const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
+const btnTestAlert = document.getElementById('btn-test-alert')!;
+
+const audioMeterFill = document.getElementById('audio-meter-fill')!;
+const audioMeterText = document.getElementById('audio-meter-text')!;
+const checkboxMuteLocal = document.getElementById('checkbox-mute-local') as HTMLInputElement;
+
+// Speaker Tracks Elements
+const activeTeacherBadge = document.getElementById('active-teacher-badge')!;
+const selectManualTeacher = document.getElementById('select-manual-teacher') as HTMLSelectElement;
+const speakerTracksContainer = document.getElementById('speaker-tracks-container')!;
+
+const transcriptFeed = document.getElementById('transcript-feed')!;
+const btnClearTranscript = document.getElementById('btn-clear-transcript')!;
+
+// Alert Card Elements
+const alertBadge = document.getElementById('alert-badge')!;
+const alertReason = document.getElementById('alert-reason')!;
+const alertSummary = document.getElementById('alert-summary')!;
+const alertMatchedGoals = document.getElementById('alert-matched-goals')!;
+const alertConfidence = document.getElementById('alert-confidence')!;
+const alertTime = document.getElementById('alert-time')!;
+
+// DOM Elements: Settings Pane
+const radioLogicOr = document.getElementById('logic-or') as HTMLInputElement;
+const radioLogicAnd = document.getElementById('logic-and') as HTMLInputElement;
+const btnPresetGoal1 = document.getElementById('btn-preset-goal-1')!;
+const btnPresetGoal2 = document.getElementById('btn-preset-goal-2')!;
+const goalsContainer = document.getElementById('goals-list-container')!;
+const inputCustomGoal = document.getElementById('input-custom-goal') as HTMLInputElement;
+const btnAddGoal = document.getElementById('btn-add-goal')!;
+
+const inputLlmBaseUrl = document.getElementById('llm-base-url') as HTMLInputElement;
+const inputLlmApiKey = document.getElementById('llm-api-key') as HTMLInputElement;
+const inputLlmModel = document.getElementById('llm-model') as HTMLInputElement;
+const inputLlmMaxTokens = document.getElementById('llm-max-tokens') as HTMLInputElement;
+const inputLlmCompactRatio = document.getElementById('llm-compact-ratio') as HTMLInputElement;
+
+const radioSttGoogle = document.getElementById('stt-google') as HTMLInputElement;
+const radioSttCpu = document.getElementById('stt-cpu') as HTMLInputElement;
+const radioSttFunasr = document.getElementById('stt-funasr') as HTMLInputElement;
+const sttGoogleContainer = document.getElementById('stt-google-container')!;
+const inputSttGoogleKey = document.getElementById('stt-google-key') as HTMLInputElement;
+const inputSttLanguageCode = document.getElementById('stt-language-code') as HTMLInputElement;
+const inputSttRollingWindow = document.getElementById('stt-rolling-window') as HTMLInputElement;
+const selectWhisperModel = document.getElementById('stt-whisper-model') as HTMLSelectElement;
+const selectSherpaModel = document.getElementById('stt-sherpa-model') as HTMLSelectElement;
+const btnSaveAllSettings = document.getElementById('btn-save-all-settings')!;
+
+// DOM Elements: Debug Pane
+const textareaSystemPrompt = document.getElementById('textarea-system-prompt') as HTMLTextAreaElement;
+const btnSaveSystemPrompt = document.getElementById('btn-save-system-prompt')!;
+const textareaCompactPrompt = document.getElementById('textarea-compact-prompt') as HTMLTextAreaElement;
+const btnSaveCompactPrompt = document.getElementById('btn-save-compact-prompt')!;
+
+const inputConstantPauseThreshold = document.getElementById('constant-pause-threshold') as HTMLInputElement;
+const inputConstantMinInterval = document.getElementById('constant-min-interval') as HTMLInputElement;
+const inputConstantMaxInterval = document.getElementById('constant-max-interval') as HTMLInputElement;
+const inputConstantCompactRatio = document.getElementById('constant-compact-ratio') as HTMLInputElement;
+const btnSaveConstants = document.getElementById('btn-save-constants')!;
+
 const logContainer = document.getElementById('log-container')!;
 const btnClearLog = document.getElementById('btn-clear-log')!;
+const toastContainer = document.getElementById('toast-container')!;
 
-// Audio Capturer State
-let audioContext: AudioContext | null = null;
-let mediaStream: MediaStream | null = null;
-let speakerGainNode: GainNode | null = null;
-let isCapturingAudio = false;
-let audioChunksCount = 0;
-let isBrowserVisible = true;
+// ========================================================
+// 1. Tab Switching & UI Navigation
+// ========================================================
+function switchTab(tabId: string): void {
+  tabs.forEach((tab) => {
+    if (tab.id === tabId) {
+      tab.classList.add('active');
+    } else {
+      tab.classList.remove('active');
+    }
+  });
 
-// Logger
-function appendLog(text: string, highlight: boolean = false) {
+  const targetPaneId = document.getElementById(tabId)?.getAttribute('data-target');
+  document.querySelectorAll<HTMLElement>('.tab-pane').forEach((pane) => {
+    if (pane.id === targetPaneId) {
+      pane.classList.add('active');
+    } else {
+      pane.classList.remove('active');
+    }
+  });
+}
+
+tabs.forEach((tab) => {
+  tab.addEventListener('click', () => {
+    if (!tab.classList.contains('nav-tab-disabled')) {
+      switchTab(tab.id);
+    }
+  });
+});
+
+// Toast Notifications Helper
+function showToast(message: string, type: 'success' | 'warning' | 'error' | 'info' = 'success'): void {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.innerText = message;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 250);
+  }, 2800);
+}
+
+// Event Logger
+function appendLog(text: string, type: 'info' | 'alert' | 'error' | 'success' = 'info'): void {
   const entry = document.createElement('div');
-  entry.className = 'log-entry';
+  entry.className = `log-entry ${type === 'alert' ? 'log-entry-alert' : type === 'error' ? 'log-entry-error' : type === 'success' ? 'log-entry-success' : ''}`;
   const time = new Date().toLocaleTimeString();
-  entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="${highlight ? 'log-highlight' : ''}">${text}</span>`;
+  entry.innerHTML = `<span class="log-time">[${time}]</span> ${text}`;
   logContainer.appendChild(entry);
   logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// Update State UI
-function updateStateBadge(state: string) {
-  statusPill.className = `status-badge status-${state}`;
+btnClearLog.addEventListener('click', () => {
+  logContainer.innerHTML = '';
+});
+
+// ========================================================
+// 2. Monitoring State & Control Pipeline
+// ========================================================
+function updateStateBadge(state: string): void {
+  statusPill.className = `status-pill status-${state}`;
   const stateLabels: Record<string, string> = {
-    idle: '未初始化 (IDLE)',
+    idle: '未开始 (IDLE)',
     initializing: '初始化中 (INITIALIZING)',
-    ready: '已就绪 (READY)',
+    ready: '待命就绪 (READY)',
     monitoring: '监控中 (MONITORING)',
     paused: '已暂停 (PAUSED)',
-    error: '错误 (ERROR)',
+    error: '运行异常 (ERROR)',
   };
   statusText.innerText = stateLabels[state] || state.toUpperCase();
+  pipelineStatusText.innerText = stateLabels[state] || state;
 
-  // Control button states
   if (state === 'monitoring') {
+    pipelineStatusText.className = 'badge badge-success';
     btnStart.style.display = 'none';
     btnResume.style.display = 'none';
     btnPause.style.display = 'inline-flex';
     btnPause.disabled = false;
     btnStop.disabled = false;
   } else if (state === 'paused') {
+    pipelineStatusText.className = 'badge badge-warning';
     btnStart.style.display = 'none';
     btnPause.style.display = 'none';
     btnResume.style.display = 'inline-flex';
     btnResume.disabled = false;
     btnStop.disabled = false;
   } else if (state === 'ready') {
+    pipelineStatusText.className = 'badge badge-info';
     btnStart.style.display = 'inline-flex';
     btnStart.disabled = false;
     btnPause.style.display = 'none';
     btnResume.style.display = 'none';
     btnStop.disabled = true;
   } else {
+    pipelineStatusText.className = 'badge badge-muted';
     btnStart.style.display = 'inline-flex';
-    btnStart.disabled = state === 'idle' || state === 'initializing';
+    btnStart.disabled = false;
     btnPause.style.display = 'none';
     btnResume.style.display = 'none';
     btnStop.disabled = true;
   }
 }
 
-// Update Token Usage Display
-function updateTokenDisplay(usage: any) {
-  if (!usage) return;
-  const total = usage.totalTokenCount || 0;
-  const prompt = usage.promptTokenCount || 0;
-  const resp = usage.responseTokenCount || 0;
-
-  tokenTotalDisplay.innerText = `总计: ${total} tokens`;
-
-  let audioTok = 0;
-  let imageTok = 0;
-  let textTok = 0;
-
-  if (Array.isArray(usage.promptTokensDetails)) {
-    for (const d of usage.promptTokensDetails) {
-      if (d.modality === 'AUDIO') audioTok = d.tokenCount || 0;
-      else if (d.modality === 'IMAGE') imageTok = d.tokenCount || 0;
-      else if (d.modality === 'TEXT') textTok = d.tokenCount || 0;
-    }
-  }
-
-  tokenPromptDisplay.innerText = `输入: ${prompt} (音频: ${audioTok}, 画面: ${imageTok}, 文本: ${textTok})`;
-  tokenResponseDisplay.innerText = `输出: ${resp}`;
+// Audio Meter update
+function updateAudioMeter(level: number): void {
+  const percent = Math.min(100, Math.max(0, Math.round(level * 300)));
+  audioMeterFill.style.width = `${percent}%`;
+  audioMeterText.innerText = `${percent}%`;
 }
 
-// Audio Capture Implementation
+// Audio Capture Setup
 async function startAudioCapture(): Promise<boolean> {
   if (isCapturingAudio) return true;
 
   try {
-    appendLog('正在启动 WebFrameMain 音频捕获 (getDisplayMedia)...');
+    appendLog('正在建立 WebFrameMain 音频采集管道 (getDisplayMedia)...');
     mediaStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
       audio: true,
@@ -161,7 +223,7 @@ async function startAudioCapture(): Promise<boolean> {
 
     const audioTracks = mediaStream.getAudioTracks();
     if (audioTracks.length === 0) {
-      appendLog('警告: 未捕获到音频轨，请确认目标窗口是否有音频播放', true);
+      appendLog('警告: 未捕获到目标页面音频轨，请确保目标窗口正在播放音频', 'error');
       return false;
     }
 
@@ -188,415 +250,610 @@ async function startAudioCapture(): Promise<boolean> {
         pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
 
-      audioChunksCount++;
-      audioChunkStats.innerText = `接收数据包: ${audioChunksCount}`;
-
       // Send to main process via IPC
-      window.skipperAPI.sendAudioChunk(pcm16.buffer, rms);
-
-      // Update local meter
+      (window as any).skipperAPI.sendAudioChunk?.(pcm16.buffer, rms);
       updateAudioMeter(rms);
     };
 
-    // 1) Processing path: Connect processor to silent node (so processor keeps running without audio doubling)
     const silentGain = audioContext.createGain();
     silentGain.gain.value = 0;
     source.connect(processor);
     processor.connect(silentGain);
     silentGain.connect(audioContext.destination);
 
-    // 2) Speaker path: Dedicated gain node for physical speaker playback
-    // If checkbox is checked (muted), gain is 0; otherwise gain is 1.
-    speakerGainNode = audioContext.createGain();
-    speakerGainNode.gain.value = checkboxMuteLocal.checked ? 0 : 1;
-    source.connect(speakerGainNode);
-    speakerGainNode.connect(audioContext.destination);
-
     isCapturingAudio = true;
-    audioStreamStatus.innerText = '状态: 采集流运行中';
-    audioStreamStatus.style.color = '#4ade80';
-    btnToggleAudioCapture.innerText = '⏹ 停止音频采集';
-    appendLog('✓ 音频采集管道建立成功 (16kHz PCM mono 流已接通)', true);
+    appendLog('✓ 16kHz PCM 音频流已打通', 'success');
     return true;
   } catch (err: any) {
-    appendLog(`音频捕获失败: ${err.message || err}`, true);
-    console.error('Audio capture error:', err);
+    appendLog(`音频捕获启动异常: ${err?.message || err}`, 'error');
     return false;
   }
 }
 
 function stopAudioCapture(): void {
   if (!isCapturingAudio) return;
-
-  if (speakerGainNode) {
-    speakerGainNode.disconnect();
-    speakerGainNode = null;
-  }
-
   if (mediaStream) {
-    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream.getTracks().forEach((t) => t.stop());
     mediaStream = null;
   }
   if (audioContext) {
     audioContext.close();
     audioContext = null;
   }
-
   isCapturingAudio = false;
-  audioStreamStatus.innerText = '状态: 已停止';
-  audioStreamStatus.style.color = '#94a3b8';
-  btnToggleAudioCapture.innerText = '🎙 激活音频采集';
   updateAudioMeter(0);
-  appendLog('音频采集流已停止');
+  appendLog('音频采集流已断开');
 }
 
-function updateAudioMeter(level: number) {
-  const percent = Math.min(100, Math.round(level * 300));
-  audioMeterFill.style.width = `${percent}%`;
-  audioMeterText.innerText = `${percent}%`;
-}
-
-// Wire UI Event Listeners
-btnOpenBrowser.addEventListener('click', async () => {
-  const url = inputBrowserUrl.value.trim();
-  appendLog(`正在打开内置直播浏览器... ${url ? `目标网址: ${url}` : '默认空白页'}`);
-  await window.skipperAPI.openBrowser(url || undefined);
-  inputStatusTag.innerText = '浏览器已打开 (请登录/播放)';
-  inputStatusTag.style.background = '#0369a1';
-  inputStatusTag.style.color = '#e0f2fe';
+// Local mute checkbox
+checkboxMuteLocal.addEventListener('change', async () => {
+  const muted = checkboxMuteLocal.checked;
+  await (window as any).skipperAPI.setMuteLocal(muted);
+  showToast(muted ? '已开启本地静音 (仅传给AI监听)' : '已开启本地扬声器播放');
+  appendLog(muted ? '本地扬声器已静音' : '本地扬声器已开启播放');
 });
 
-btnLoadSample.addEventListener('click', async () => {
-  const sampleUrl = 'file:///C:/Projects/skipper/test-assets/player.html';
-  inputBrowserUrl.value = sampleUrl;
-  appendLog(`正在加载 10分钟测试样例视频: ${sampleUrl}...`, true);
-  await window.skipperAPI.openBrowser(sampleUrl);
-  inputStatusTag.innerText = '测试样例已加载 (请开始播放)';
-  inputStatusTag.style.background = '#0369a1';
-  inputStatusTag.style.color = '#e0f2fe';
+// Transcript Feed append helper
+function appendTranscriptSegment(seg: any): void {
+  const empty = transcriptFeed.querySelector('.feed-empty');
+  if (empty) empty.remove();
+
+  const line = document.createElement('div');
+  line.className = 'transcript-line';
+  const time = seg.timestamp ? new Date(seg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+  const speaker = seg.speaker || '老师';
+  line.innerHTML = `<span class="transcript-time">[${time}]</span><span class="transcript-speaker">[${speaker}]:</span><span class="transcript-text">${seg.text}</span>`;
+  transcriptFeed.appendChild(line);
+  transcriptFeed.scrollTop = transcriptFeed.scrollHeight;
+}
+
+btnClearTranscript.addEventListener('click', () => {
+  transcriptFeed.innerHTML = '<div class="feed-empty">等待直播语音输入，识别的转录文本将在此处实时流水滚动显示...</div>';
+});
+
+// HTML escaping helper
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Speaker Tracks rendering
+function renderSpeakerTracks(tracks: any[]): void {
+  if (!speakerTracksContainer) return;
+
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    speakerTracksContainer.innerHTML = '<div class="feed-empty">等待声纹分离与说话人检测（音频输入后自动生成各音轨与发言记录）</div>';
+    return;
+  }
+
+  // Find active teacher
+  const teacherTrack = tracks.find((t) => t.isTeacher);
+  if (teacherTrack) {
+    const isManual = selectManualTeacher.value !== '';
+    activeTeacherBadge.innerText = `主讲老师: ${teacherTrack.id} (${isManual ? '用户指定' : 'AI识别'})`;
+    activeTeacherBadge.className = 'badge badge-success';
+  } else {
+    activeTeacherBadge.innerText = '主讲老师: 自动识别中';
+    activeTeacherBadge.className = 'badge badge-info';
+  }
+
+  // Update dropdown options while preserving selection
+  const currentVal = selectManualTeacher.value;
+  const prevOptions = Array.from(selectManualTeacher.options).map((o) => o.value);
+  const trackIds = tracks.map((t) => t.id);
+
+  let needsRebuild = false;
+  if (prevOptions.length !== trackIds.length + 1) {
+    needsRebuild = true;
+  } else {
+    for (let i = 0; i < trackIds.length; i++) {
+      if (prevOptions[i + 1] !== trackIds[i]) {
+        needsRebuild = true;
+        break;
+      }
+    }
+  }
+
+  if (needsRebuild) {
+    selectManualTeacher.innerHTML = '<option value="">🤖 自动判定 (每3分钟大模型研判)</option>';
+    for (const track of tracks) {
+      const opt = document.createElement('option');
+      opt.value = track.id;
+      opt.textContent = `${track.id} (指定为主讲老师)`;
+      selectManualTeacher.appendChild(opt);
+    }
+    if (trackIds.includes(currentVal)) {
+      selectManualTeacher.value = currentVal;
+    } else {
+      selectManualTeacher.value = '';
+    }
+  }
+
+  // Render cards
+  speakerTracksContainer.innerHTML = '';
+  for (const track of tracks) {
+    const card = document.createElement('div');
+    card.className = `speaker-track-card ${track.isTeacher ? 'is-teacher' : ''}`;
+
+    const top = document.createElement('div');
+    top.className = 'track-card-top';
+
+    const title = document.createElement('span');
+    title.className = 'track-title';
+    title.innerHTML = `<span>🎙️ ${escapeHtml(track.id)}</span> <span class="${track.isTeacher ? 'track-tag-teacher' : 'track-tag-student'}">${track.isTeacher ? '★ 主讲老师' : '学生/旁听'}</span>`;
+
+    const stats = document.createElement('span');
+    stats.className = 'track-stats';
+    stats.textContent = `${track.totalDurationSec.toFixed(1)}s (${track.utteranceCount}次)`;
+
+    top.appendChild(title);
+    top.appendChild(stats);
+
+    const utterancesBox = document.createElement('div');
+    utterancesBox.className = 'track-recent-utterances';
+    if (Array.isArray(track.recentUtterances) && track.recentUtterances.length > 0) {
+      utterancesBox.innerHTML = track.recentUtterances
+        .map((u: string) => `<span>• ${escapeHtml(u)}</span>`)
+        .join('');
+    } else {
+      utterancesBox.innerHTML = '<span style="color: #64748b;">(暂无发言记录)</span>';
+    }
+
+    card.appendChild(top);
+    card.appendChild(utterancesBox);
+    speakerTracksContainer.appendChild(card);
+  }
+}
+
+selectManualTeacher.addEventListener('change', async () => {
+  const selectedId = selectManualTeacher.value.trim() || null;
+  try {
+    await (window as any).skipperAPI.setManualTeacher(selectedId);
+    if (selectedId) {
+      showToast(`已手动指定主讲老师为: ${selectedId}`, 'success');
+      appendLog(`[主讲老师设定] 用户手动绑定: ${selectedId}`);
+    } else {
+      showToast('已切换为自动研判主讲老师模式（每3分钟评估）', 'info');
+      appendLog('[主讲老师设定] 切换为大模型自动识别模式');
+    }
+    const tracks = await (window as any).skipperAPI.getSpeakerTracks();
+    if (Array.isArray(tracks)) renderSpeakerTracks(tracks);
+  } catch (err: any) {
+    showToast(`设置主讲老师失败: ${err?.message || err}`, 'error');
+  }
+});
+
+// Browser Open & View Control
+btnOpenBrowser.addEventListener('click', async () => {
+  const url = inputBrowserUrl.value.trim();
+  appendLog(`正在打开直播窗口: ${url || '默认空白页'}`);
+  await (window as any).skipperAPI.openBrowser(url || undefined);
+  browserStatusTag.innerText = '直播窗口已开启';
+  browserStatusTag.className = 'badge badge-info';
+  showToast('直播浏览器已打开');
 });
 
 btnToggleBrowserView.addEventListener('click', async () => {
   if (isBrowserVisible) {
-    await window.skipperAPI.hideBrowser();
+    await (window as any).skipperAPI.hideBrowser();
     isBrowserVisible = false;
-    btnToggleBrowserView.innerText = '👁 显示浏览器';
-    appendLog('直播浏览器已隐藏到后台 (页面继续无油门运行)');
+    btnToggleBrowserView.innerHTML = '<span>👁 显示浏览器</span>';
+    showToast('直播窗口已最小化到后台监控');
+    appendLog('直播浏览器已置入后台继续无限制运行');
   } else {
-    await window.skipperAPI.showBrowser();
+    await (window as any).skipperAPI.showBrowser();
     isBrowserVisible = true;
-    btnToggleBrowserView.innerText = '👁 隐藏浏览器';
-    appendLog('直播浏览器已恢复前台显示');
+    btnToggleBrowserView.innerHTML = '<span>👁 显/隐浏览器</span>';
+    showToast('直播窗口已恢复显示');
+    appendLog('直播浏览器已唤起至前台');
   }
 });
 
-btnCompleteInit.addEventListener('click', async () => {
-  appendLog('用户触发【完成初始化】交互...');
-  // Start audio capture directly within user click gesture
-  await startAudioCapture();
-  await window.skipperAPI.completeInitialization();
-  inputStatusTag.innerText = '初始化完成 (已就绪)';
-  inputStatusTag.style.background = '#15803d';
-  inputStatusTag.style.color = '#dcfce7';
-  appendLog('✓ 输入层初始化完成！可以开始开启监控', true);
-});
-
-btnTestCapture.addEventListener('click', async () => {
-  appendLog('执行单次抓图测试 (webContents.capturePage)...');
-  const frame = await window.skipperAPI.captureSingleFrame();
-  if (frame) {
-    renderFrame(frame);
-    appendLog(`✓ 抓图成功: ${frame.width}x${frame.height}, 时间戳: ${frame.timestamp}`);
-  } else {
-    appendLog('抓图失败，请确保内置浏览器窗口已打开', true);
-  }
-});
-
-btnToggleAudioCapture.addEventListener('click', async () => {
-  if (isCapturingAudio) {
-    stopAudioCapture();
-  } else {
-    await startAudioCapture();
-  }
-});
-
-checkboxMuteLocal.addEventListener('change', async () => {
-  const muted = checkboxMuteLocal.checked;
-  if (speakerGainNode && audioContext) {
-    try {
-      speakerGainNode.gain.setValueAtTime(muted ? 0 : 1, audioContext.currentTime);
-    } catch (e) {
-      speakerGainNode.gain.value = muted ? 0 : 1;
-    }
-  }
-  await window.skipperAPI.setMuteLocal(muted);
-  appendLog(
-    muted
-      ? '🔇 已开启本地静音 (电脑扬声器不发声，音频仅传给 AI 监听)'
-      : '🔊 已开启本地扬声器播放 (您可以直接在电脑上听到直播声音)',
-    true
-  );
-});
-
-// Helper to update Provider UI view mode
-function setUIMode(mode: 'aistudio' | 'vertex' | 'mock') {
-  if (mode === 'aistudio') {
-    radioAIStudio.checked = true;
-    aistudioContainer.style.display = 'block';
-    vertexContainer.style.display = 'none';
-    providerModeTag.innerText = 'Google AI Studio (Gemini Developer API)';
-    providerModeTag.style.background = '#1e3a8a';
-    providerModeTag.style.color = '#93c5fd';
-  } else if (mode === 'vertex') {
-    radioVertex.checked = true;
-    aistudioContainer.style.display = 'none';
-    vertexContainer.style.display = 'block';
-    providerModeTag.innerText = 'Google Cloud Vertex AI';
-    providerModeTag.style.background = '#581c87';
-    providerModeTag.style.color = '#e9d5ff';
-  } else {
-    radioMock.checked = true;
-    aistudioContainer.style.display = 'none';
-    vertexContainer.style.display = 'none';
-    providerModeTag.innerText = 'Mock 演练模式';
-    providerModeTag.style.background = '#065f46';
-    providerModeTag.style.color = '#a7f3d0';
-  }
-}
-
-// Mode Toggle Handlers
-radioAIStudio.addEventListener('change', async () => {
-  if (radioAIStudio.checked) {
-    setUIMode('aistudio');
-    await window.skipperAPI.setBackendType('aistudio');
-    appendLog('[Provider] 已切换为 Google AI Studio 模式 (Gemini Developer API)', true);
-  }
-});
-
-radioVertex.addEventListener('change', async () => {
-  if (radioVertex.checked) {
-    setUIMode('vertex');
-    await window.skipperAPI.setBackendType('vertex');
-    appendLog('[Provider] 已切换为 Google Cloud Vertex AI 模式', true);
-  }
-});
-
-radioMock.addEventListener('change', async () => {
-  if (radioMock.checked) {
-    setUIMode('mock');
-    await window.skipperAPI.setBackendType('mock');
-    appendLog('[Provider] 已切换到本地 Mock Live Server (10s 自动演练模式)', true);
-  }
-});
-
-btnSaveAIStudio.addEventListener('click', async () => {
-  const key = inputApiKey.value.trim();
-  await window.skipperAPI.setProviderConfig({
-    backendType: 'aistudio',
-    apiKey: key,
-  });
-  appendLog(`✓ AI Studio API Key 已保存 (长度: ${key.length})`, true);
-});
-
-btnSaveVertex.addEventListener('click', async () => {
-  const project = inputVertexProject.value.trim();
-  const location = inputVertexLocation.value.trim() || 'us-central1';
-  const apiKey = inputVertexApiKey.value.trim();
-
-  await window.skipperAPI.setProviderConfig({
-    backendType: 'vertex',
-    project,
-    location,
-    apiKey: apiKey || undefined,
-  });
-  appendLog(`✓ Vertex AI 配置已保存: Project="${project || '(ADC/默认)'}", Location="${location}"`, true);
-});
-
-btnSaveModel.addEventListener('click', async () => {
-  const model = selectModel.value.trim();
-  await window.skipperAPI.setModel(model);
-  appendLog(`✓ Live 模型已切换为: "${model}"`, true);
-});
-
-btnUpdatePrompt.addEventListener('click', async () => {
-  const prompt = inputUserPrompt.value.trim();
-  if (!prompt) return;
-  await window.skipperAPI.setUserPrompt(prompt);
-  appendLog(`已更新叫我条件 (sendClientContent): "${prompt}"`, true);
-});
-
-btnMockTrigger.addEventListener('click', async () => {
-  const prompt = inputUserPrompt.value.trim() || '目标知识点讲解完毕';
-  appendLog(`[Provider] 模拟触发 notify_user tool call: "${prompt}"...`);
-  await window.skipperAPI.mockTriggerNotification(
-    '目标知识点讲解完毕',
-    `【AI 观察】当前黑板公式已推导结束，老师开始翻页。符合用户条件: "${prompt}"`
-  );
-});
-
-btnTestAction.addEventListener('click', async () => {
-  appendLog('[ActionLayer] 测试桌面弹窗通知接口...');
-  await window.skipperAPI.testNotification('测试提醒', 'Skipper 动作层接口工作正常！');
-});
-
+// Start / Pause / Resume / Stop Monitoring
 btnStart.addEventListener('click', async () => {
-  const prompt = inputUserPrompt.value.trim();
-  appendLog(`🚀 启动处理层监控管道... 条件: "${prompt}"`);
-  if (!isCapturingAudio) {
-    await startAudioCapture();
+  appendLog('🚀 正在启动监控流程...');
+  try {
+    if (!isCapturingAudio) {
+      await startAudioCapture();
+    }
+    await (window as any).skipperAPI.startMonitoring();
+    appendLog('✓ 监控调度已就绪，正在实时监听语音与画面', 'success');
+    showToast('课堂监控已启动！', 'success');
+  } catch (err: any) {
+    appendLog(`启动监控失败: ${err?.message || err}`, 'error');
+    showToast(`启动失败: ${err?.message || err}`, 'error');
   }
-  await window.skipperAPI.startMonitoring(prompt);
-  appendLog('✓ 监控已启动 (每 2.5s 周期截图 + 音频连续流传输)', true);
 });
 
 btnPause.addEventListener('click', async () => {
   appendLog('⏸ 正在暂停监控...');
-  await window.skipperAPI.pauseMonitoring();
-  appendLog('监控已暂停');
+  await (window as any).skipperAPI.pauseMonitoring();
+  showToast('监控已暂停');
 });
 
 btnResume.addEventListener('click', async () => {
   appendLog('▶ 正在恢复监控...');
-  await window.skipperAPI.resumeMonitoring();
-  appendLog('监控已恢复');
+  await (window as any).skipperAPI.resumeMonitoring();
+  showToast('监控已恢复', 'success');
 });
 
 btnStop.addEventListener('click', async () => {
   appendLog('⏹ 正在停止监控...');
-  await window.skipperAPI.stopMonitoring();
+  await (window as any).skipperAPI.stopMonitoring();
   stopAudioCapture();
-  appendLog('监控已停止');
+  showToast('监控已停止');
 });
 
-btnClearLog.addEventListener('click', () => {
-  logContainer.innerHTML = '';
+btnTestAlert.addEventListener('click', async () => {
+  appendLog('[测试演练] 触发桌面弹窗与提醒卡片测试...');
+  await (window as any).skipperAPI.testNotification('测试提醒', 'Skipper 听课助手动作层弹窗与提醒机制工作正常！');
 });
 
-// Render incoming frame preview
-function renderFrame(frame: any) {
-  if (!frame || !frame.dataUrl) return;
-  previewPlaceholder.style.display = 'none';
-  previewImg.style.display = 'block';
-  previewImg.src = frame.dataUrl;
-  frameInfo.innerText = `分辨率: ${frame.width}x${frame.height}`;
-  frameTime.innerText = `时间: ${new Date(frame.timestamp).toLocaleTimeString()}`;
+// ========================================================
+// 3. Goals Management (Setting Tab)
+// ========================================================
+function renderGoals(): void {
+  goalsContainer.innerHTML = '';
+  if (currentGoals.length === 0) {
+    goalsContainer.innerHTML = '<div style="color: var(--text-subtle); font-size: 12px; padding: 6px;">暂未添加监控目标，请在下方输入或使用快捷预设添加</div>';
+    return;
+  }
+
+  currentGoals.forEach((goal) => {
+    const item = document.createElement('div');
+    item.className = 'goal-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = goal.enabled;
+    checkbox.className = 'goal-checkbox';
+    checkbox.title = '勾选以启用或停用此目标';
+    checkbox.addEventListener('change', () => {
+      goal.enabled = checkbox.checked;
+    });
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.value = goal.text;
+    textInput.className = 'goal-text-input';
+    textInput.addEventListener('change', () => {
+      goal.text = textInput.value.trim();
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'goal-delete-btn';
+    delBtn.innerHTML = '🗑';
+    delBtn.title = '删除此目标';
+    delBtn.addEventListener('click', () => {
+      currentGoals = currentGoals.filter((g) => g.id !== goal.id);
+      renderGoals();
+    });
+
+    item.appendChild(checkbox);
+    item.appendChild(textInput);
+    item.appendChild(delBtn);
+    goalsContainer.appendChild(item);
+  });
 }
 
-// Real-time event listeners from SkipperAPI
-window.skipperAPI.onStatusUpdate((status: any) => {
+function addGoalItem(text: string, enabled: boolean = true): void {
+  if (!text) return;
+  const newGoal: GoalItem = {
+    id: `goal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    text,
+    enabled,
+  };
+  currentGoals.push(newGoal);
+  renderGoals();
+  showToast(`已添加目标: "${text.slice(0, 20)}..."`, 'success');
+}
+
+btnAddGoal.addEventListener('click', () => {
+  const text = inputCustomGoal.value.trim();
+  if (text) {
+    addGoalItem(text, true);
+    inputCustomGoal.value = '';
+  }
+});
+
+inputCustomGoal.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const text = inputCustomGoal.value.trim();
+    if (text) {
+      addGoalItem(text, true);
+      inputCustomGoal.value = '';
+    }
+  }
+});
+
+btnPresetGoal1.addEventListener('click', () => {
+  const text = '一个知识点,证明或题目已经讲解完成,且已经开始讲解下一个内容板块（注意：仅上一内容推导完结、收尾回顾或互动确认不算达成，必须老师已经实质开启、引出或切入下一个新内容板块）';
+  const exists = currentGoals.some((g) => g.text === text);
+  if (!exists) {
+    addGoalItem(text, true);
+  } else {
+    showToast('该预设目标已存在', 'warning');
+  }
+});
+
+btnPresetGoal2.addEventListener('click', () => {
+  const text = '老师写完一道题目 同学们该做了';
+  const exists = currentGoals.some((g) => g.text === text);
+  if (!exists) {
+    addGoalItem(text, true);
+  } else {
+    showToast('该预设目标已存在', 'warning');
+  }
+});
+
+// STT Provider Toggle
+radioSttGoogle.addEventListener('change', () => {
+  sttGoogleContainer.style.display = radioSttGoogle.checked ? 'flex' : 'none';
+});
+
+radioSttCpu.addEventListener('change', () => {
+  sttGoogleContainer.style.display = radioSttGoogle.checked ? 'flex' : 'none';
+});
+
+if (radioSttFunasr) {
+  radioSttFunasr.addEventListener('change', () => {
+    sttGoogleContainer.style.display = radioSttGoogle.checked ? 'flex' : 'none';
+  });
+}
+
+// Save All Settings Button
+btnSaveAllSettings.addEventListener('click', async () => {
+  const logic = radioLogicAnd.checked ? 'AND' : 'OR';
+  currentGoalLogic = logic;
+
+  let chosenSttProvider: 'google' | 'cpu' | 'funasr' = 'cpu';
+  if (radioSttGoogle.checked) {
+    chosenSttProvider = 'google';
+  } else if (radioSttFunasr && radioSttFunasr.checked) {
+    chosenSttProvider = 'funasr';
+  }
+
+  const configToSave = {
+    goals: currentGoals,
+    goalLogic: logic,
+    llm: {
+      baseUrl: inputLlmBaseUrl.value.trim() || 'https://api.deepseek.com',
+      apiKey: inputLlmApiKey.value.trim() || 'sk-a1cb432e809a48f1887013e73f09d96b',
+      model: inputLlmModel.value.trim() || 'deepseek-v4-flash',
+      maxContextTokens: parseInt(inputLlmMaxTokens.value, 10) || 8192,
+      compactRatio: parseFloat(inputLlmCompactRatio.value) || 0.6,
+    },
+    stt: {
+      provider: chosenSttProvider,
+      googleApiKey: inputSttGoogleKey.value.trim(),
+      languageCode: inputSttLanguageCode.value.trim() || 'zh-CN',
+      rollingWindowSec: parseInt(inputSttRollingWindow.value, 10) || 25,
+      whisperModelSize: selectWhisperModel ? selectWhisperModel.value : 'small',
+      sherpaEmbeddingModelType: selectSherpaModel ? selectSherpaModel.value : 'campplus',
+    },
+  };
+
+  try {
+    await (window as any).skipperAPI.saveConfig(configToSave);
+    appendLog('✓ 目标与大模型/STT设置已全部保存', 'success');
+    showToast('全部设置保存成功！', 'success');
+  } catch (err: any) {
+    appendLog(`保存设置失败: ${err?.message || err}`, 'error');
+    showToast(`保存失败: ${err?.message || err}`, 'error');
+  }
+});
+
+// ========================================================
+// 4. Debug Tab & Independent Config Files
+// ========================================================
+btnSaveSystemPrompt.addEventListener('click', async () => {
+  const sysPrompt = textareaSystemPrompt.value.trim();
+  const compactPrompt = textareaCompactPrompt.value.trim();
+  try {
+    await (window as any).skipperAPI.savePrompts({
+      systemPrompt: sysPrompt,
+      compactPrompt: compactPrompt,
+    });
+    appendLog('✓ 系统提示词已保存到 skipper-prompts.json', 'success');
+    showToast('系统提示词已保存');
+  } catch (err: any) {
+    showToast('保存提示词失败', 'error');
+  }
+});
+
+btnSaveCompactPrompt.addEventListener('click', async () => {
+  const sysPrompt = textareaSystemPrompt.value.trim();
+  const compactPrompt = textareaCompactPrompt.value.trim();
+  try {
+    await (window as any).skipperAPI.savePrompts({
+      systemPrompt: sysPrompt,
+      compactPrompt: compactPrompt,
+    });
+    appendLog('✓ 压缩提示词已保存到 skipper-prompts.json', 'success');
+    showToast('压缩提示词已保存');
+  } catch (err: any) {
+    showToast('保存提示词失败', 'error');
+  }
+});
+
+btnSaveConstants.addEventListener('click', async () => {
+  const constants = {
+    pauseThresholdSec: parseFloat(inputConstantPauseThreshold.value) || 3.0,
+    minIntervalSec: parseFloat(inputConstantMinInterval.value) || 10.0,
+    maxIntervalSec: parseFloat(inputConstantMaxInterval.value) || 60.0,
+    compactRatio: parseFloat(inputConstantCompactRatio.value) || 0.6,
+  };
+
+  try {
+    await (window as any).skipperAPI.saveConstants(constants);
+    appendLog('✓ 阈值常量已保存到 skipper-constants.json', 'success');
+    showToast('阈值常量保存成功', 'success');
+  } catch (err: any) {
+    showToast('保存阈值常量失败', 'error');
+  }
+});
+
+// ========================================================
+// 5. Initial Configuration Population & Event Subscriptions
+// ========================================================
+async function initDashboard(): Promise<void> {
+  try {
+    const config = await (window as any).skipperAPI.getConfig();
+    if (config) {
+      // 1. Browser URL
+      if (config.lastBrowserUrl) {
+        inputBrowserUrl.value = config.lastBrowserUrl;
+      }
+      if (config.muteLocalAudio !== undefined) {
+        checkboxMuteLocal.checked = config.muteLocalAudio;
+      }
+
+      // 2. Goals & Logic
+      if (Array.isArray(config.goals)) {
+        currentGoals = config.goals;
+      }
+      if (config.goalLogic === 'AND') {
+        radioLogicAnd.checked = true;
+        currentGoalLogic = 'AND';
+      } else {
+        radioLogicOr.checked = true;
+        currentGoalLogic = 'OR';
+      }
+      renderGoals();
+
+      // 3. LLM Config
+      if (config.llm) {
+        if (config.llm.baseUrl) inputLlmBaseUrl.value = config.llm.baseUrl;
+        if (config.llm.apiKey) inputLlmApiKey.value = config.llm.apiKey;
+        if (config.llm.model) inputLlmModel.value = config.llm.model;
+        if (config.llm.maxContextTokens) inputLlmMaxTokens.value = String(config.llm.maxContextTokens);
+        if (config.llm.compactRatio) {
+          inputLlmCompactRatio.value = String(config.llm.compactRatio);
+          inputConstantCompactRatio.value = String(config.llm.compactRatio);
+        }
+      }
+
+      // 4. STT Config
+      if (config.stt) {
+        if (config.stt.provider === 'google') {
+          radioSttGoogle.checked = true;
+          sttGoogleContainer.style.display = 'flex';
+        } else if (config.stt.provider === 'funasr') {
+          if (radioSttFunasr) radioSttFunasr.checked = true;
+          sttGoogleContainer.style.display = 'none';
+        } else {
+          radioSttCpu.checked = true;
+          sttGoogleContainer.style.display = 'none';
+        }
+        if (config.stt.googleApiKey) inputSttGoogleKey.value = config.stt.googleApiKey;
+        if (config.stt.languageCode) inputSttLanguageCode.value = config.stt.languageCode;
+        if (config.stt.rollingWindowSec) inputSttRollingWindow.value = String(config.stt.rollingWindowSec);
+        if (selectWhisperModel && config.stt.whisperModelSize) selectWhisperModel.value = config.stt.whisperModelSize;
+        if (selectSherpaModel && config.stt.sherpaEmbeddingModelType) selectSherpaModel.value = config.stt.sherpaEmbeddingModelType;
+      }
+
+      // 5. Prompts
+      if (config.prompts) {
+        if (config.prompts.systemPrompt) textareaSystemPrompt.value = config.prompts.systemPrompt;
+        if (config.prompts.compactPrompt) textareaCompactPrompt.value = config.prompts.compactPrompt;
+      }
+
+      // 6. Threshold Constants
+      if (config.thresholds) {
+        if (config.thresholds.pauseThresholdSec) {
+          inputConstantPauseThreshold.value = String(config.thresholds.pauseThresholdSec);
+        }
+        if (config.thresholds.minIntervalSec) {
+          inputConstantMinInterval.value = String(config.thresholds.minIntervalSec);
+        }
+        if (config.thresholds.maxIntervalSec) {
+          inputConstantMaxInterval.value = String(config.thresholds.maxIntervalSec);
+        }
+      }
+    }
+
+    // Status sync
+    const status = await (window as any).skipperAPI.getStatus();
+    if (status) {
+      updateStateBadge(status.state);
+      if (status.isInitialized) {
+        browserStatusTag.innerText = '已就绪 (视频播放中)';
+        browserStatusTag.className = 'badge badge-success';
+      }
+    }
+
+    // Load initial speaker tracks
+    try {
+      const initialTracks = await (window as any).skipperAPI.getSpeakerTracks?.();
+      if (Array.isArray(initialTracks) && initialTracks.length > 0) {
+        renderSpeakerTracks(initialTracks);
+      }
+    } catch {}
+  } catch (err: any) {
+    console.error('Failed to initialize dashboard config:', err);
+  }
+}
+
+// Wire Event Listeners from SkipperAPI
+(window as any).skipperAPI.onStatusUpdate((status: any) => {
   if (!status) return;
   updateStateBadge(status.state);
-
   if (status.isInitialized) {
-    inputStatusTag.innerText = '已就绪 (Ready)';
-    inputStatusTag.style.background = '#15803d';
-    inputStatusTag.style.color = '#dcfce7';
-  }
-
-  if (status.lastNotification) {
-    const notif = status.lastNotification;
-    lastNotificationDisplay.innerHTML = `
-      <b style="color: #f87171;">${notif.title}</b><br>
-      <span>${notif.body}</span><br>
-      <small style="color: #94a3b8;">${new Date(notif.timestamp).toLocaleTimeString()}</small>
-    `;
+    browserStatusTag.innerText = '已就绪 (视频播放中)';
+    browserStatusTag.className = 'badge badge-success';
   }
 });
 
-window.skipperAPI.onFrameProcessed((frame: any) => {
-  renderFrame(frame);
-});
-
-window.skipperAPI.onAudioLevel((level: number) => {
+(window as any).skipperAPI.onAudioLevel((level: number) => {
   updateAudioMeter(level);
 });
 
-window.skipperAPI.onNotification((notif: any) => {
-  appendLog(`🔔 [动作层通知] ${notif.title} - ${notif.body}`, true);
-  lastNotificationDisplay.innerHTML = `
-    <b style="color: #f87171;">${notif.title}</b><br>
-    <span>${notif.body}</span><br>
-    <small style="color: #94a3b8;">${new Date().toLocaleTimeString()}</small>
-  `;
+(window as any).skipperAPI.onTranscriptSegment((seg: any) => {
+  appendTranscriptSegment(seg);
 });
 
-window.skipperAPI.onUsageMetadata((usage: any) => {
-  updateTokenDisplay(usage);
-  appendLog(
-    `📊 [Token 消耗] 总计: ${usage.totalTokenCount} (Prompt: ${usage.promptTokenCount}, Resp: ${usage.responseTokenCount})`
-  );
+(window as any).skipperAPI.onSpeakerTracksUpdated?.((tracks: any[]) => {
+  renderSpeakerTracks(tracks);
 });
 
-window.skipperAPI.onProviderStatus((status: string) => {
-  appendLog(`[Provider 状态变更] -> ${status}`);
-  if (status === 'connected') {
-    providerBadgeTag.innerText = 'Gemini Live 连接就绪';
-    providerBadgeTag.style.background = '#15803d';
-    providerBadgeTag.style.color = '#dcfce7';
-  } else if (status === 'disconnected') {
-    providerBadgeTag.innerText = '已断开连接';
-    providerBadgeTag.style.background = '#475569';
-    providerBadgeTag.style.color = '#cbd5e1';
-  }
+(window as any).skipperAPI.onTeacherChanged?.((data: any) => {
+  appendLog(`[主讲老师变更] 当前主讲: ${data.teacherId} (${data.isManual ? '用户指定' : 'AI自动判定: ' + (data.reason || '')})`, 'alert');
+  showToast(`主讲老师已确定: ${data.teacherId}`, 'info');
+  (window as any).skipperAPI.getSpeakerTracks?.().then((tracks: any[]) => {
+    if (Array.isArray(tracks)) renderSpeakerTracks(tracks);
+  }).catch(() => {});
 });
 
-window.skipperAPI.onProviderError((err: string) => {
-  appendLog(`[Provider 错误] ${err}`, true);
+(window as any).skipperAPI.onScreeningAlert((alert: any) => {
+  alertBadge.innerText = '🚨 触发提醒';
+  alertBadge.className = 'badge badge-warning';
+  alertReason.innerText = alert.reason || '已达到预设关注目标';
+  alertSummary.innerText = alert.summary || '当前知识点讲解结束或老师已开始下一环节';
+  alertMatchedGoals.innerText = Array.isArray(alert.matchedGoals) ? alert.matchedGoals.join('; ') : String(alert.matchedGoals || '--');
+  alertConfidence.innerText = alert.confidence ? `${Math.round(alert.confidence * 100)}%` : '95%';
+  alertTime.innerText = new Date(alert.timestamp || Date.now()).toLocaleTimeString();
+
+  appendLog(`🚨 [课堂提醒触发] ${alert.reason} - ${alert.summary}`, 'alert');
+  showToast(`🔔 提醒: ${alert.reason}`, 'warning');
 });
 
-window.skipperAPI.onUrlChanged((url: string) => {
+(window as any).skipperAPI.onEvaluationLog((log: any) => {
+  const triggerTypeStr = log.triggerType === 'pause' ? '停顿触发' : log.triggerType === 'timeout' ? '超时强制' : '手动触发';
+  const verdictStr = log.verdict?.triggered ? '🚨 满足条件触发' : '静默监控中';
+  appendLog(`[LLM 评估 (${triggerTypeStr})] 耗时: ${log.durationMs}ms | 判定: ${verdictStr} | 主题: "${log.verdict?.currentTopic || '通用'}"`);
+});
+
+(window as any).skipperAPI.onUrlChanged((url: string) => {
   if (url && !url.startsWith('about:')) {
     inputBrowserUrl.value = url;
-    appendLog(`[浏览器导航] 当前直播页面: ${url}`);
+    appendLog(`直播页面导航: ${url}`);
   }
 });
 
-// Initial fetch and persistent configuration restoration
-window.skipperAPI.getStatus().then((status: any) => {
-  if (status) {
-    updateStateBadge(status.state);
-
-    const config = status.config || {};
-
-    if (config.lastBrowserUrl) {
-      inputBrowserUrl.value = config.lastBrowserUrl;
-    }
-
-    if (config.muteLocalAudio !== undefined) {
-      checkboxMuteLocal.checked = config.muteLocalAudio;
-    }
-
-    if (status.userPrompt || config.userPrompt) {
-      inputUserPrompt.value = status.userPrompt || config.userPrompt;
-    }
-
-    if (config.apiKey) {
-      inputApiKey.value = config.apiKey;
-    }
-
-    if (config.vertexProject) {
-      inputVertexProject.value = config.vertexProject;
-    }
-
-    if (config.vertexLocation) {
-      inputVertexLocation.value = config.vertexLocation;
-    }
-
-    if (config.vertexApiKey) {
-      inputVertexApiKey.value = config.vertexApiKey;
-    }
-
-    const currentModel = config.model || status.provider?.model;
-    if (currentModel) {
-      selectModel.value = currentModel;
-    }
-
-    const currentMode = config.backendType || status.provider?.backendType || (status.provider?.useMockServer ? 'mock' : 'aistudio');
-    setUIMode(currentMode);
-
-    if (status.provider?.stats?.usage) {
-      updateTokenDisplay(status.provider.stats.usage);
-    }
-  }
-});
-
+// Run dashboard initialization
+initDashboard();

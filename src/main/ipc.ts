@@ -2,23 +2,65 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { InputLayer } from '../core/input/inputLayer';
 import { ProcessingLayer } from '../core/processing/processingLayer';
 import { ActionLayer } from '../core/action/actionLayer';
-import { IAIProvider } from '../core/provider/types';
-import { GeminiLiveProvider } from '../core/provider/geminiLiveProvider';
-import { MockAIProvider } from '../core/provider/mockProvider';
+import { ISTTProvider, createSTTProvider } from '../core/stt';
+import { ScreeningEngine } from '../core/llm';
 import { FrameData } from '../common/types';
-import { ConfigStore, SkipperConfig } from '../core/config/configStore';
+import { ConfigStore } from '../core/config/configStore';
 
 export function setupIpcHandlers(
   inputLayer: InputLayer,
   processingLayer: ProcessingLayer,
   actionLayer: ActionLayer,
-  provider: IAIProvider,
+  sttProvider: ISTTProvider,
+  screeningEngine: ScreeningEngine,
   configStore: ConfigStore,
   getDashboardWindow: () => BrowserWindow | null
 ): void {
   // Config handlers
   ipcMain.handle('skipper:get-config', async () => {
     return configStore.getConfig();
+  });
+
+  ipcMain.handle('skipper:save-config', async (_e, newConfig: any) => {
+    const updated = configStore.updateConfig(newConfig);
+
+    // Apply updated goals to live screening engine
+    if (updated.goals) {
+      screeningEngine.setUserGoals(updated.goals, updated.goalLogic);
+    }
+
+    // Apply updated thresholds
+    if (updated.thresholds) {
+      screeningEngine.setThresholds(updated.thresholds);
+    }
+
+    // Apply updated STT provider if provider type changed
+    if (newConfig.stt && newConfig.stt.provider) {
+      try {
+        const newSTT = createSTTProvider({
+          provider: newConfig.stt.provider,
+          googleApiKey: newConfig.stt.googleApiKey,
+          googleLanguageCode: newConfig.stt.languageCode,
+          rollingWindowSec: newConfig.stt.rollingWindowSec,
+        });
+        processingLayer.setSTTProvider(newSTT);
+      } catch (err: any) {
+        console.warn('[IPC] Could not switch STT provider dynamically:', err?.message);
+      }
+    }
+
+    return true;
+  });
+
+  ipcMain.handle('skipper:save-prompts', async (_e, prompts: { systemPrompt: string; compactPrompt: string }) => {
+    configStore.savePrompts(prompts);
+    return true;
+  });
+
+  ipcMain.handle('skipper:save-constants', async (_e, constants: any) => {
+    configStore.saveConstants(constants);
+    screeningEngine.setThresholds(constants);
+    return true;
   });
 
   ipcMain.handle('skipper:set-mute-local', async (_e, muted: boolean) => {
@@ -86,94 +128,48 @@ export function setupIpcHandlers(
   });
 
   ipcMain.handle('skipper:get-status', async () => {
-    const status = processingLayer.getStatus();
-    const providerInfo = (provider as any).getProviderInfo?.() || {
-      name: provider.name,
-      isConnected: provider.isConnected,
-      apiKey: (provider as any).getApiKey?.() ? '******' : '',
-      backendType: (provider as any).getBackendType?.() || ((provider as any).isUsingMockServer?.() ? 'mock' : 'aistudio'),
-      useMockServer: (provider as any).isUsingMockServer?.() ?? true,
-      stats: (provider as any).getStats?.() || {},
-    };
-    return {
-      ...status,
-      provider: providerInfo,
-      config: configStore.getConfig(),
-    };
+    return processingLayer.getStatus();
   });
 
-  // Gemini Live & Provider config handlers
-  ipcMain.handle('skipper:set-api-key', async (_e, apiKey: string) => {
-    configStore.updateConfig({ apiKey });
-    if ((provider as any).setApiKey) {
-      (provider as any).setApiKey(apiKey);
-    }
-    return true;
+  // Speaker tracks and manual teacher selection
+  ipcMain.handle('skipper:get-speaker-tracks', async () => {
+    return processingLayer.getSpeakerTracks();
   });
 
-  ipcMain.handle('skipper:set-provider-mode', async (_e, useMockServer: boolean, endpoint?: string) => {
-    configStore.updateConfig({ backendType: useMockServer ? 'mock' : 'aistudio' });
-    if ((provider as any).setUseMockServer) {
-      (provider as any).setUseMockServer(useMockServer, endpoint);
-    }
-    return true;
-  });
-
-  ipcMain.handle('skipper:set-backend-type', async (_e, backendType: any) => {
-    configStore.updateConfig({ backendType });
-    if ((provider as any).setBackendType) {
-      (provider as any).setBackendType(backendType);
-    }
-    return true;
-  });
-
-  ipcMain.handle('skipper:set-vertex-config', async (_e, project?: string, location?: string) => {
-    configStore.updateConfig({ vertexProject: project, vertexLocation: location });
-    if ((provider as any).setVertexConfig) {
-      (provider as any).setVertexConfig(project, location);
-    }
-    return true;
-  });
-
-  ipcMain.handle('skipper:set-provider-config', async (_e, config: any) => {
-    const update: Partial<SkipperConfig> = {};
-    if (config.backendType) update.backendType = config.backendType;
-    if (config.apiKey !== undefined) update.apiKey = config.apiKey;
-    if (config.project !== undefined) update.vertexProject = config.project;
-    if (config.location !== undefined) update.vertexLocation = config.location;
-    if (config.model !== undefined) update.model = config.model;
-    configStore.updateConfig(update);
-
-    if ((provider as any).setProviderConfig) {
-      (provider as any).setProviderConfig(config);
-    }
-    return true;
-  });
-
-  ipcMain.handle('skipper:set-model', async (_e, model: string) => {
-    configStore.updateConfig({ model });
-    if ((provider as any).setModel) {
-      (provider as any).setModel(model);
-    }
+  ipcMain.handle('skipper:set-manual-teacher', async (_e, speakerId: string | null) => {
+    processingLayer.setManualTeacher(speakerId);
     return true;
   });
 
   // Action layer handlers
   ipcMain.handle('skipper:test-notification', async (_e, reason?: string, summary?: string) => {
-    return await processingLayer.testNotification(reason, summary);
+    const testReason = reason || '测试通知';
+    const testSummary = summary || '这是一条测试弹窗提醒：Skipper 动作层接口工作正常！';
+    const result = await processingLayer.testNotification(testReason, testSummary);
+    sendToDashboard('skipper:screening-alert', {
+      reason: testReason,
+      summary: testSummary,
+      matchedGoals: [testReason],
+      confidence: 1.0,
+      currentTopic: '测试演练',
+      timestamp: Date.now(),
+    });
+    return result;
   });
 
   // Manual/mock trigger notification handler
   ipcMain.handle('skipper:mock-trigger-notification', async (_e, reason?: string, summary?: string) => {
-    if (provider instanceof MockAIProvider) {
-      provider.mockTriggerNotification(reason, summary);
-    } else {
-      (provider as any).triggerNotification?.(
-        reason || '手动触发提醒',
-        summary || '用户在控制台手动触发了提醒测试',
-        '知识点总结'
-      );
-    }
+    const manualReason = reason || '手动触发提醒';
+    const manualSummary = summary || '用户在控制台手动触发了提醒测试';
+    await processingLayer.testNotification(manualReason, manualSummary);
+    sendToDashboard('skipper:screening-alert', {
+      reason: manualReason,
+      summary: manualSummary,
+      matchedGoals: [manualReason],
+      confidence: 1.0,
+      currentTopic: '手动演练',
+      timestamp: Date.now(),
+    });
     return true;
   });
 
@@ -208,16 +204,29 @@ export function setupIpcHandlers(
     sendToDashboard('skipper:audio-level', level);
   });
 
-  actionLayer.onNotification((notif) => {
-    sendToDashboard('skipper:notification-sent', notif);
+  processingLayer.on('transcriptSegment', (segment: any) => {
+    sendToDashboard('skipper:transcript-segment', segment);
   });
 
-  // Forward Usage Metadata from AI Provider
-  if ((provider as any).onUsageMetadata) {
-    (provider as any).onUsageMetadata((usage: any) => {
-      sendToDashboard('skipper:usage-metadata', usage);
-    });
-  }
+  processingLayer.on('speakerTracksUpdated', (tracks: any) => {
+    sendToDashboard('skipper:speaker-tracks-updated', tracks);
+  });
+
+  processingLayer.on('teacherChanged', (data: any) => {
+    sendToDashboard('skipper:teacher-changed', data);
+  });
+
+  processingLayer.on('screeningAlert', (alert: any) => {
+    sendToDashboard('skipper:screening-alert', alert);
+  });
+
+  processingLayer.on('evaluationLog', (log: any) => {
+    sendToDashboard('skipper:evaluation-log', log);
+  });
+
+  actionLayer.onNotification((notif: any) => {
+    sendToDashboard('skipper:notification-sent', notif);
+  });
 
   inputLayer.on('urlChanged', (url: string) => {
     if (url && !url.startsWith('about:')) {
@@ -225,13 +234,4 @@ export function setupIpcHandlers(
       sendToDashboard('skipper:url-changed', url);
     }
   });
-
-  provider.on('statusChange', (status: string) => {
-    sendToDashboard('skipper:provider-status', status);
-  });
-
-  provider.on('error', (err: any) => {
-    sendToDashboard('skipper:provider-error', err?.message || String(err));
-  });
 }
-

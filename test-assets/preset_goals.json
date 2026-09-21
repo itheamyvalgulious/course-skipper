@@ -1,0 +1,26 @@
+[
+  {
+    "id": "template-section-transition",
+    "title": "知识点讲解完毕并开启下一新板块",
+    "text": "一个知识点,证明或题目已经讲解完成,且已经开始讲解下一个内容板块（注意：仅上一内容推导完结、收尾回顾或互动确认不算达成，必须老师已经实质开启、引出或切入下一个新内容板块）",
+    "enabled": true
+  },
+  {
+    "id": "template-exercise-assigned",
+    "title": "老师出题让学生做练习",
+    "text": "老师写完一道题目 同学们该做了",
+    "enabled": true
+  },
+  {
+    "id": "template-class-interaction",
+    "title": "老师开始提问互动或点名",
+    "text": "老师开始随机点名提问或发起全班互动答题",
+    "enabled": false
+  },
+  {
+    "id": "template-class-dismissal",
+    "title": "老师宣布下课或中途休息",
+    "text": "老师宣布本节课结束、下课或课间休息",
+    "enabled": false
+  }
+]

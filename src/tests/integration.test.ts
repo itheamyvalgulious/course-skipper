@@ -7,13 +7,18 @@ app.commandLine.appendSwitch('disable-user-gesture-requirement-for-presentation'
 
 import { InputLayer } from '../core/input/inputLayer';
 import { ActionLayer } from '../core/action/actionLayer';
-import { GeminiLiveProvider } from '../core/provider/geminiLiveProvider';
-import { GeminiLiveMockServer } from '../mock/geminiLiveMockServer';
+import { createSTTProvider, MockSTTProvider, STTSegment } from '../core/stt';
+import { ScreeningEngine, LLMClient, ScreeningVerdict } from '../core/llm';
 import { ProcessingLayer } from '../core/processing/processingLayer';
 import { ConfigStore } from '../core/config/configStore';
+import {
+  DEFAULT_LLM_BASE_URL,
+  DEFAULT_LLM_API_KEY,
+  DEFAULT_LLM_MODEL,
+} from '../core/config/constants';
 
 async function runTests() {
-  console.log('=== [TEST] Starting Skipper Gemini Live Integration Test ===\n');
+  console.log('=== [TEST] Starting Skipper STT + LLM Screening Integration Tests ===\n');
 
   let passed = 0;
   let failed = 0;
@@ -28,46 +33,42 @@ async function runTests() {
     }
   }
 
-  const testHtmlUrl = 'data:text/html,<html><head><title>Test Classroom</title></head><body style="background:%23111;color:%23fff;"><h1>Skipper Lecture Classroom</h1></body></html>';
-  let mockServer: GeminiLiveMockServer | null = null;
+  const testHtmlUrl =
+    'data:text/html,<html><head><title>Test Classroom</title></head><body style="background:%23111;color:%23fff;"><h1>Skipper Lecture Classroom</h1></body></html>';
 
   try {
     // 0. Test ConfigStore Persistence
     console.log('[Test 0] Testing ConfigStore Persistence...');
-    const testConfigPath = path.join(process.cwd(), '.skipper-data', 'test-config.json');
+    const testConfigPath = path.join(process.cwd(), '.skipper-data', 'test-config-v2.json');
     if (fs.existsSync(testConfigPath)) {
-      try { fs.unlinkSync(testConfigPath); } catch {}
+      try {
+        fs.unlinkSync(testConfigPath);
+      } catch {}
     }
     const store1 = new ConfigStore(testConfigPath);
-    assert(store1.get('model') === 'gemini-3.8-live', 'Default model is gemini-3.8-live');
-    assert(store1.get('muteLocalAudio') === true, 'Default muteLocalAudio is true');
+    assert(Array.isArray(store1.getGoals()), 'Default config goals is an array');
+    store1.addGoal('测试目标：老师开始提问');
+    assert(store1.getGoals().length === 1, 'Goal can be added dynamically');
+    assert(store1.getGoalLogic() === 'OR', 'Default goalLogic is OR');
+    assert(store1.getLLMConfig().model === DEFAULT_LLM_MODEL, 'Default model matches deepseek-v4-flash');
 
     store1.updateConfig({
-      apiKey: 'test-api-key-12345',
-      backendType: 'aistudio',
+      llm: {
+        baseUrl: 'http://35.208.205.93:20000/v1',
+        apiKey: 'test-key-abc',
+        model: 'gemini-3.8-flash',
+        maxContextTokens: 8192,
+        compactRatio: 0.6,
+      },
       lastBrowserUrl: 'https://classroom.example.com/live/123',
       muteLocalAudio: true,
-      userPrompt: '当讲完柯西不等式时叫我',
     });
 
     // Re-instantiate from disk to verify persistence
     const store2 = new ConfigStore(testConfigPath);
-    assert(store2.get('apiKey') === 'test-api-key-12345', 'API key persisted and restored from disk');
-    assert(store2.get('backendType') === 'aistudio', 'Backend type persisted');
-    assert(store2.get('lastBrowserUrl') === 'https://classroom.example.com/live/123', 'lastBrowserUrl persisted');
-    assert(store2.get('muteLocalAudio') === true, 'muteLocalAudio persisted');
-    assert(store2.get('userPrompt') === '当讲完柯西不等式时叫我', 'userPrompt persisted');
-
-    // 0.5. Start Gemini Live Mock Server on test port
-    console.log('\n[Test 0.5] Starting GeminiLiveMockServer...');
-    mockServer = new GeminiLiveMockServer({
-      port: 8098,
-      proactiveIntervalMs: 2000, // Speed up interval for test to 2s
-      usageIntervalMs: 1500,
-      logLevel: 'error',
-    });
-    const mockPort = await mockServer.start();
-    assert(mockPort === 8098, `Mock server started on port ${mockPort}`);
+    assert(store2.getLLMConfig().apiKey === 'test-key-abc', 'API key persisted and restored from disk');
+    assert(store2.getConfig().lastBrowserUrl === 'https://classroom.example.com/live/123', 'lastBrowserUrl persisted');
+    assert(store2.getConfig().muteLocalAudio === true, 'muteLocalAudio persisted');
 
     // 1. Test InputLayer instantiation & initial state
     console.log('\n[Test 1] Testing InputLayer & Audio Muting...');
@@ -98,127 +99,134 @@ async function runTests() {
     assert(notificationReceived !== null, 'ActionLayer emitted notification event');
     assert(notificationReceived?.reason === '测试原因', 'Notification reason matches');
 
-    // 3. Test GeminiLiveProvider with Mock Server
-    console.log('\n[Test 3] Testing GeminiLiveProvider...');
-    const provider = new GeminiLiveProvider({
-      userPrompt: '测试Prompt: Fatou引理证明完成',
-      useMockServer: true,
-      endpoint: `ws://127.0.0.1:${mockPort}`,
-    });
-    assert(provider.name === 'GeminiLiveProvider', 'Provider name is GeminiLiveProvider');
-    assert(provider.getUserPrompt() === '测试Prompt: Fatou引理证明完成', 'Initial prompt is set');
-
-    let triggerCalled: boolean = false;
-    let receivedTrigger: any = null;
-    provider.onNotificationTrigger((event) => {
-      triggerCalled = true;
-      receivedTrigger = event;
-      console.log('    -> GeminiLiveProvider received toolCall notification:', event.reason);
+    // 3. Test STT Provider
+    console.log('\n[Test 3] Testing STT Provider Factory & Segment Emission...');
+    const mockSTT = new MockSTTProvider();
+    let emittedSegment: STTSegment | null = null;
+    mockSTT.on('segment', (seg) => {
+      emittedSegment = seg;
     });
 
-    let usageReceived: any = null;
-    if (provider.onUsageMetadata) {
-      provider.onUsageMetadata((usage) => {
-        usageReceived = usage;
-      });
-    }
+    await mockSTT.start();
+    assert(mockSTT.isRunning === true, 'Mock STT Provider is running');
 
-    await provider.connect();
-    assert(provider.isConnected === true, 'GeminiLiveProvider connects to mock server successfully');
+    mockSTT.injectSegment({
+      text: 'OK，那这个式子就证完了对不对？',
+      startTime: 220.0,
+      endTime: 223.5,
+      speaker: 'Teacher',
+      isFinal: true,
+    });
 
-    // Send audio chunk & frame
-    const dummyPcm = Buffer.alloc(640);
-    await provider.sendAudioChunk(dummyPcm);
-    const dummyJpg = Buffer.from('fake-jpeg-data');
-    await provider.sendFrame(dummyJpg, 'image/jpeg');
+    assert(emittedSegment !== null, 'STT Provider emitted segment event');
+    assert((emittedSegment as any)?.text === 'OK，那这个式子就证完了对不对？', 'Emitted segment text matches');
 
-    // Update prompt
-    provider.setUserPrompt('当老师讲完 Fatou 引理时叫我');
-    assert(provider.getUserPrompt() === '当老师讲完 Fatou 引理时叫我', 'Prompt updated');
+    // 4. Test LLMClient & ScreeningEngine
+    console.log('\n[Test 4] Testing ScreeningEngine Integration...');
+    const mockLLMClient = {
+      chatCompletion: async () => ({
+        content: JSON.stringify({
+          triggered: true,
+          matchedGoals: ['一个知识点,证明或题目已经讲解完成,且已经开始讲解下一个内容板块'],
+          confidence: 0.98,
+          currentTopic: '完备性定义',
+          reason: '老师已完成最佳逼近推导并宣布进入完备性新板块',
+          summary: '最佳逼近定理讲解完毕，完备性定义开始',
+        }),
+      }),
+    } as unknown as LLMClient;
 
-    // Wait for proactive toolCall and usageMetadata from mock server
-    console.log('  -> Waiting for proactive toolCall (notify_user) from mock server...');
-    await new Promise((r) => setTimeout(r, 2500));
-    assert(Boolean(triggerCalled), 'Received proactive notify_user toolCall from Gemini Live provider');
-    assert(receivedTrigger?.reason !== undefined, 'Notification has reason property');
+    const screeningEngine = new ScreeningEngine({
+      llmClient: mockLLMClient,
+      goals: [
+        {
+          id: 'test-goal-1',
+          text: '一个知识点,证明或题目已经讲解完成,且已经开始讲解下一个内容板块',
+          enabled: true,
+        },
+      ],
+      thresholds: {
+        pauseThresholdSec: 0.1, // fast for testing
+        minIntervalSec: 0.1,
+        maxIntervalSec: 10.0,
+      },
+    });
 
-    // 4. Test ProcessingLayer & Pipeline Orchestration
-    console.log('\n[Test 4] Testing ProcessingLayer Scheduling with GeminiLiveProvider...');
-    const processingLayer = new ProcessingLayer(inputLayer, actionLayer, provider, {
+    let alertReceived: ScreeningVerdict | null = null;
+    screeningEngine.on('alert', (v) => {
+      alertReceived = v;
+    });
+
+    screeningEngine.attachSTT(mockSTT);
+    mockSTT.injectSegment({
+      text: '好，稍微等一下哈，下面讲完备性。',
+      startTime: 366.0,
+      endTime: 370.0,
+      speaker: 'Teacher',
+      isFinal: true,
+    });
+
+    await screeningEngine.triggerManualEvaluation('TestTrigger');
+    assert(alertReceived !== null, 'ScreeningEngine alert emitted upon trigger evaluation');
+    assert((alertReceived as any)?.triggered === true, 'ScreeningVerdict triggered is true');
+    assert(
+      (alertReceived as any)?.reason.includes('完备性'),
+      'ScreeningVerdict reason accurately mentions topic transition'
+    );
+
+    // 5. Test ProcessingLayer Scheduling Pipeline
+    console.log('\n[Test 5] Testing ProcessingLayer Pipeline...');
+    const processingLayer = new ProcessingLayer(inputLayer, actionLayer, mockSTT, screeningEngine, {
       frameIntervalMs: 1000,
+      autoStartOnReady: false,
     });
-    assert(processingLayer.state === 'idle', 'ProcessingLayer initial state is idle');
 
-    // Initialize browser through InputLayer
-    console.log('  -> Opening browser window...');
-    const initPromise = processingLayer.initialize(testHtmlUrl);
-    await new Promise((r) => setTimeout(r, 600));
-    assert(inputLayer.isBrowserOpen === true, 'Browser window opened');
+    assert(processingLayer.state === 'idle', 'ProcessingLayer begins in idle state');
 
-    // Simulate user completing initialization in browser
-    console.log('  -> Simulating user completing initialization...');
-    inputLayer.completeInitialization();
-    const initResult = await initPromise;
-    assert(initResult === true, 'ProcessingLayer initialization completed successfully');
-    assert(processingLayer.state === 'ready', 'ProcessingLayer state is ready');
+    // Start monitoring
+    await processingLayer.startMonitoring();
+    assert(processingLayer.state === 'monitoring', 'ProcessingLayer transitions to monitoring state');
+    assert(processingLayer.getStatus().isAiConnected === true, 'Status reflects STT active');
 
-    // Test Frame Capture
-    console.log('  -> Capturing single frame from live browser...');
-    const frame = await processingLayer.captureSingleFrame();
-    assert(frame !== null, 'Frame captured is not null');
-    assert(frame !== null && frame.buffer.length > 0, 'Frame buffer has data');
-    assert(frame?.mimeType === 'image/jpeg', 'Frame mimeType is image/jpeg');
+    // Push audio chunks through input layer to verify pipe
+    inputLayer.pushAudioChunk(Buffer.alloc(3200), 45);
+    assert(processingLayer.getStatus().audioLevel === 45, 'Audio level passed through to ProcessingLayer');
 
-    // Test Audio Stream
-    console.log('  -> Testing Audio Stream ingestion...');
-    inputLayer.pushAudioChunk(dummyPcm, 0.45);
-    const audioStats = (inputLayer.getAudioStream() as any).getStats();
-    assert(audioStats.chunks >= 0, 'Audio stream accepts audio data');
-
-    // Test Start Monitoring
-    console.log('  -> Starting Monitoring pipeline...');
-    await processingLayer.startMonitoring('当老师讲完 Fatou 引理时叫我');
-    assert(processingLayer.state === 'monitoring', 'ProcessingLayer state is monitoring');
-
-    // Let it run for a couple frames
-    await new Promise((r) => setTimeout(r, 2200));
-    const status = processingLayer.getStatus();
-    assert(status.framesProcessed >= 1, `Frames processed count is ${status.framesProcessed} (>= 1)`);
-
-    // Test Pause & Resume
-    console.log('  -> Testing Pause & Resume...');
+    // Pause & Resume
     processingLayer.pauseMonitoring();
-    assert(processingLayer.state === 'paused', 'State after pause is paused');
+    assert(processingLayer.state === 'paused', 'ProcessingLayer transitions to paused state');
 
     processingLayer.resumeMonitoring();
-    assert(processingLayer.state === 'monitoring', 'State after resume is monitoring');
+    assert(processingLayer.state === 'monitoring', 'ProcessingLayer resumes monitoring state');
 
-    // Stop Monitoring
-    console.log('  -> Stopping Monitoring...');
+    // Stop monitoring
     await processingLayer.stopMonitoring();
-    assert(processingLayer.state === 'ready', 'State after stop is ready');
+    assert(processingLayer.state === 'idle' || processingLayer.state === 'ready', 'ProcessingLayer stops cleanly');
 
     // Clean up
+    await mockSTT.stop();
     await inputLayer.destroy();
-    await provider.disconnect();
-    if (mockServer) {
-      await mockServer.stop();
-    }
-    await new Promise((r) => setTimeout(r, 200));
 
-    console.log('\n=== [TEST COMPLETED] ===');
-    console.log(`Summary: ${passed} passed, ${failed} failed.`);
-
-    const exitCode = failed > 0 ? 1 : 0;
-    app.exit(exitCode);
-  } catch (err) {
-    console.error('Test threw unexpected error:', err);
-    if (mockServer) {
-      await mockServer.stop();
+    // Clean up test config
+    if (fs.existsSync(testConfigPath)) {
+      try {
+        fs.unlinkSync(testConfigPath);
+      } catch {}
     }
+  } catch (err: any) {
+    console.error('Test execution threw unhandled exception:', err);
+    failed++;
+  }
+
+  console.log('\n==================================================');
+  console.log(`Integration Test Summary: ${passed} Passed, ${failed} Failed`);
+  console.log('==================================================\n');
+
+  if (failed > 0) {
     app.exit(1);
+  } else {
+    app.exit(0);
   }
 }
 
 app.whenReady().then(runTests);
-

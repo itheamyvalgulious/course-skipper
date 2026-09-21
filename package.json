@@ -9,7 +9,12 @@
     "watch": "tsc -w",
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
-    "test": "npm run build && electron dist/tests/integration.test.js"
+    "test": "npm run build && electron dist/tests/integration.test.js",
+    "cli": "npm run build && node dist/cli/index.js",
+    "download:stt": "node scripts/download-stt-engines.js",
+    "download:funasr": "node scripts/download-stt-engines.js --funasr-only",
+    "download:vad": "node scripts/download-stt-engines.js --vad-only",
+    "test:all": "npm run build && electron dist/tests/integration.test.js && electron dist/tests/stt.test.js && electron dist/tests/llmScreening.test.js"
   },
   "keywords": [
     "electron",

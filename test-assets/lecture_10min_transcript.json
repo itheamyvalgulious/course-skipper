@@ -1,0 +1,134 @@
+[
+  {
+    "startTime": 5.0,
+    "endTime": 15.0,
+    "speaker": "Teacher",
+    "text": "同学们好，上节课我们探讨了傅里叶级数在线性空间里的投影，今天我们来证明三角多项式的最佳逼近与极值性定理。"
+  },
+  {
+    "startTime": 20.0,
+    "endTime": 38.0,
+    "speaker": "Teacher",
+    "text": "首先考虑均方误差积分，我们用任意三角多项式 Tn(x) 来逼近目标函数 f(x)，写出二范数平方展开式。"
+  },
+  {
+    "startTime": 45.0,
+    "endTime": 68.0,
+    "speaker": "Teacher",
+    "text": "将 Tn 展开为傅里叶正交基底之和，对积分项进行逐项配方处理。"
+  },
+  {
+    "startTime": 75.0,
+    "endTime": 110.0,
+    "speaker": "Teacher",
+    "text": "利用规范正交系的性质，交叉内积项中只有同频分量不为零，其余高次项积分全部为零消去。"
+  },
+  {
+    "startTime": 120.0,
+    "endTime": 155.0,
+    "speaker": "Teacher",
+    "text": "注意到每一项配方后，都出现了一个包含 (ck - dk)^2 的非负平方和项。"
+  },
+  {
+    "startTime": 165.0,
+    "endTime": 195.0,
+    "speaker": "Teacher",
+    "text": "因为实数平方恒非负，所以这一整项代数和必定大于等于零，剩下的一项正好就是原函数减去傅里叶部分和 Sn 的误差。"
+  },
+  {
+    "startTime": 205.0,
+    "endTime": 218.0,
+    "speaker": "Teacher",
+    "text": "因此直接导出不等式：||f - Tn||^2 恒大于等于 ||f - Sn||^2。"
+  },
+  {
+    "startTime": 220.0,
+    "endTime": 223.5,
+    "speaker": "Teacher",
+    "text": "OK，那这个极值性不等式就证完了对不对？"
+  },
+  {
+    "startTime": 228.0,
+    "endTime": 242.0,
+    "speaker": "Teacher",
+    "text": "接下来我们看等号成立的条件。显然只有每一项配方平方为零，也就是所有系数 ck 恰好等于傅里叶系数 dk 时，等号才成立。"
+  },
+  {
+    "startTime": 245.0,
+    "endTime": 248.0,
+    "speaker": "Teacher",
+    "text": "取等条件也就闭环了。听明白了没有？"
+  },
+  {
+    "startTime": 255.0,
+    "endTime": 288.0,
+    "speaker": "Teacher",
+    "text": "这说明在所有次数不超过 n 的三角多项式中，傅里叶部分和就是均方误差意义下的唯一最佳逼近多项式。"
+  },
+  {
+    "startTime": 292.0,
+    "endTime": 295.0,
+    "speaker": "Teacher",
+    "text": "好了，这个证明与几何背景大家就都清楚了哈。"
+  },
+  {
+    "startTime": 305.0,
+    "endTime": 345.0,
+    "speaker": "Teacher",
+    "text": "有限维正交投影大家掌握了，那如果是无限维空间呢？级数能不能在极限意义下无条件逼近原函数？"
+  },
+  {
+    "startTime": 355.0,
+    "endTime": 365.0,
+    "speaker": "Teacher",
+    "text": "这就引导出我们今天的第二个核心概念。"
+  },
+  {
+    "startTime": 366.0,
+    "endTime": 372.0,
+    "speaker": "Teacher",
+    "text": "好，稍微等一下哈，我们进入下一个内容板块：规范正交组的完备性。"
+  },
+  {
+    "startTime": 380.0,
+    "endTime": 420.0,
+    "speaker": "Teacher",
+    "text": "请大家看黑板左侧，我们给出严格数学定义。设 E 是内积空间中的一个规范正交系。"
+  },
+  {
+    "startTime": 435.0,
+    "endTime": 480.0,
+    "speaker": "Teacher",
+    "text": "如果对于空间中任意函数 f，以及任意给定的正实数 epsilon 大于零，我们总能找到一组有限线性组合满足范数误差小于 epsilon。"
+  },
+  {
+    "startTime": 495.0,
+    "endTime": 535.0,
+    "speaker": "Teacher",
+    "text": "换句话说，正交系张成的有限线性组合在空间中是稠密的，此时我们就称该正交系在空间中是完备的。"
+  },
+  {
+    "startTime": 545.0,
+    "endTime": 572.0,
+    "speaker": "Teacher",
+    "text": "这一性质保证了无限级数在均方收敛意义下的完全逼近能力，避免了空间中存在未被基底捕捉到的残差维度。"
+  },
+  {
+    "startTime": 573.0,
+    "endTime": 575.5,
+    "speaker": "Teacher",
+    "text": "关于完备性的严格定义我们就讲到这里，听明白了没有？好！"
+  },
+  {
+    "startTime": 578.0,
+    "endTime": 590.0,
+    "speaker": "Teacher",
+    "text": "好，那么下面我们在黑板中央起笔书写并证明关于完备性的充要条件定理一。"
+  },
+  {
+    "startTime": 592.0,
+    "endTime": 600.0,
+    "speaker": "Teacher",
+    "text": "定理一内容如下：设规范正交组完备，则封闭性与帕塞瓦尔等式等价..."
+  }
+]

@@ -20,6 +20,9 @@ export interface IProcessingLayer {
   captureSingleFrame(): Promise<FrameData | null>;
   testNotification(reason?: string, summary?: string): Promise<boolean>;
 
+  getSpeakerTracks(): any[];
+  setManualTeacher(speakerId: string | null): void;
+
   getStatus(): SkipperStatus;
 
   onStateChange(handler: (state: ProcessingState) => void): void;
